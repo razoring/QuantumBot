@@ -1,17 +1,12 @@
 import os
 import typing
 from dotenv import load_dotenv
-from datetime import datetime
 
 import discord
 from discord.ext import commands
 from discord import app_commands
 
-import yfinance as yf
-import pandas as pd
-from humanize import numSuffix
-
-from projections import project
+import functions
 from themes import brand, bgDark
 
 load_dotenv()
@@ -36,6 +31,8 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 - Alert command
 - Release version with github
 """
+
+projection = functions.Projection()
 
 @bot.event
 async def on_ready():
@@ -63,37 +60,13 @@ async def predict(interaction: discord.Interaction, ticker: str, model: typing.O
         selectedModel = 2
 
     warning = False
-    image_buffer = project(ticker, selectedModel)
-    if image_buffer == None:
+    image_buffer = projection.create(ticker, selectedModel)
+    if image_buffer is None:
         warning = True
-        image_buffer = project(ticker, 1)
+        image_buffer = projection.create(ticker, 1)
     if image_buffer:
         file = discord.File(image_buffer, filename="output.png")
-
-        symbol = yf.Ticker(ticker)
-        history = symbol.history(period="1d")
-        year = symbol.history(period="1y")
-        info = symbol.info
-
-        # yield courtesy of: https://www.khueapps.com/blog/article/how-to-fetch-stock-dividend-data-with-python
-        div = symbol.dividends
-        now = pd.Timestamp.utcnow().tz_localize(None)
-        yearAgo = now - pd.DateOffset(years=1)
-        close = yf.Ticker(ticker).history(period="5d")["Close"].iloc[-1]
-        yearAgo = pd.Timestamp(yearAgo, tz=div.index.tz)
-        ttmDiv = div[div.index >= yearAgo].sum()
-        yields = 100.0 * ttmDiv / close if close > 0 else float("nan")
-        ex_div_date = info.get('exDividendDate')
-        ex_div_str = datetime.fromtimestamp(ex_div_date).date() if ex_div_date else "N/A"
-
-        # causing errors, make that libaray ASAP
         embed.set_image(url="attachment://output.png")
-        embed.add_field(name=f"High: ${round(history['High'].max(),2)}", value=f"Low: ${round(history['Low'].min(),2)}", inline=True)
-        embed.add_field(name=f"Open: ${round(history['Open'].max(),2)}", value=f"Close: ${round(history['Close'].max(),2)}", inline=True)
-        embed.add_field(name=f"Vol: {numSuffix(round(history['Volume'].max(),2))}", value=f"Beta: {numSuffix(round(symbol.info.get('beta', 0),2))}", inline=True)
-        embed.add_field(name=f"52Wk High: ${round(year['High'].max(),2)}", value=f"52Wk Low: ${round(year['Low'].min(),2)}", inline=True)
-        embed.add_field(name=f"P/E: ${round(info.get('trailingPE', 0),2)}", value=f"EPS: ${round(symbol.info.get('trailingEps'),2)}", inline=True)
-        embed.add_field(name=f"Yield: {round(yields,2)}%", value=f"Ex. Dividend: {ex_div_str}", inline=True)
 
         if warning == True:
             embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
