@@ -1,6 +1,7 @@
 import os
 import typing
 from dotenv import load_dotenv
+import tracemalloc
 
 import discord
 from discord.ext import commands
@@ -41,6 +42,24 @@ async def on_ready():
 @bot.tree.command(name="help", description="Prints debug information.")
 async def help(interaction: discord.Interaction):
     await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
+
+@bot.tree.command(name="info", description="Provide latest quote and news of a given ticker")
+@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
+async def info(interaction: discord.Interaction, ticker: str):
+    pass
+
+@bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
+@app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price = "Price to set alert for", identifier = "Identifier used for deletion")
+@app_commands.choices(action=[
+    app_commands.Choice(name="Create", value="c"),
+    app_commands.Choice(name="Delete", value="d"),
+    app_commands.Choice(name="List", value="l"),
+    app_commands.Choice(name="Clear", value="c")
+])
+async def alerts(interaction: discord.Interaction, ticker: typing.Optional[app_commands.Choice[str]], action: str, price: typing.Optional[app_commands.Choice[str]], identifier: typing.Optional[app_commands.Choice[str]]):
+    if type(ticker) is type(None) and type(price) is type(None) and type(identifier) is type(None):
+        await interaction.response.send_message("```Nothing but us chickens. (See /help for help)```", ephemeral=True)
+    await interaction.response.defer()
 
 @bot.tree.command(name="predict", description="Predicts future movements of a given ticker")
 @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")

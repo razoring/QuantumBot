@@ -93,7 +93,7 @@ class Projection:
         prophetTrend = None
         prophetSigma = 0
         if model != 0: # not model IV
-            histories = {365:0.5, 730:0.15, 1095:0.15, 1825:0.2} #years in days: weight
+            histories = {365:0.5, 1825:0.5} #years in days: weight
             for h in histories:
                 data = history[history.index > lastDate - timedelta(days=h)].reset_index()[["Date", "Close"]]
                 data.columns = ["ds", "y"]
