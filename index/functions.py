@@ -27,14 +27,31 @@ matplotlib.use("Agg") # set backend / disables ui opening
 logging.getLogger("prophet").setLevel(logging.WARNING) # pre setup / disable logging
 logging.getLogger("cmdstanpy").disabled = True
 
-class yFinanceWrapper:
+class Humanizer:
+    def __init__(self):
+        pass
+
+    def suffix(self, number):
+        suffixes = ["","K","M","B","T","Q"]
+        magnitude = 0
+        while abs(number) >= 1000 and magnitude < len(suffixes) - 1:
+            magnitude += 1
+            number /= 1000
+        return f"{round(number,2)}{suffixes[magnitude]}".replace(".0","")
+    
+    def sign(self, number):
+        return "+"+str(number) if number > 0 else number
+
+class yFinanceWrapper():
     def __init__(self, ticker):
         self._symbol = yf.Ticker(ticker=ticker)
         self._fastInfo = self._symbol.get_fast_info()
         self._info = self._symbol.info
-        #self._dividends = self._symbol.dividends
+        self._dividends = self._symbol.dividends
+        self._calendar = self._symbol.calendar
         #self._historyYear = self._symbol.history(period="1y")
         #self._historyDay = self._historyYear.tail(1)
+        #self._historyDay = self._symbol.history(period="1d",interval="1m")
 
     def getHistoryYear(self) -> pd.DataFrame:
         return self._historyYear
@@ -46,13 +63,19 @@ class yFinanceWrapper:
         return self._info
     
     def getDividendsPayout(self):
-        return self._dividends
+        return self._dividends if self.getAnnualYield() > 0 else "-"
+    
+    def getCalendar(self):
+        return self._calendar
     
     def getFastInfo(self):
         return self._fastInfo
     
     def getCurrentPrice(self):
         return self.getFastInfo()["lastPrice"]
+
+    def getPriceChange(self):
+        return self.getCurrentPrice() - self.getDayOpen()
 
     def getDayOpen(self):
         return self.getFastInfo()["open"]
@@ -91,12 +114,27 @@ class yFinanceWrapper:
     def getEPSRatio(self):
         return self.getStockInfo()["trailingEps"]
     
-    def getDividendYield(self):
-        return self.getStockInfo()["trailingAnnualDividendRate"]
+    def getAnnualYield(self):
+        return round(float(self.getStockInfo()["trailingAnnualDividendRate"])*100,2)
+    
+    def getMonthlyYield(self):
+        return round(self.getAnnualYield()/12.0,2)
     
     def getExDividendDate(self):
-       return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date) if self.getDividendYield() > 0 else "-"
+       return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date()) if self.getAnnualYield() > 0 else "-"
     
+    def getPayDate(self):
+        calendar = self.getCalendar()
+        return str(calendar["Dividend Date"]) if "Dividend Date" in calendar else "-"
+
+    def getDividendAmount(self):
+        dividends = self.getDividendsPayout()
+        return dividends[dividends.index[-1]]
+    
+    def getDividendChange(self):
+        dividends = self.getDividendsPayout()
+        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%"
+
     def getMktCap(self):
         return self.getStockInfo()["marketCap"]
     

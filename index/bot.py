@@ -36,6 +36,19 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 """
 
 projection = functions.Projection()
+humanizer = functions.Humanizer()
+
+class Update(discord.ui.View):
+    def __init__(self, ticker, static, info):
+        super().__init__(timeout=None)
+        self.ticker = ticker
+        self.static = static
+        self.info = info
+    
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        #info = functions.yFinanceWrapper(ticker=self.ticker)
+        await interaction.message.edit(embed=infoEmbed(info=self.info, ticker=self.ticker, static=self.static), view=self)
 
 class Feedback(discord.ui.View):
     def __init__(self, alertPrice, alertTicker):
@@ -63,10 +76,7 @@ class Feedback(discord.ui.View):
             if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton"):
                 self.remove_item(child)
         # edit the original message to update the view
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
+        await interaction.message.edit(view=self)
 
     @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -81,10 +91,7 @@ class Feedback(discord.ui.View):
         for child in list(self.children):
             if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton"):
                 self.remove_item(child)
-        try:
-            await interaction.message.edit(view=self)
-        except Exception:
-            pass
+        await interaction.message.edit(view=self)
 
 @bot.event
 async def on_ready():
@@ -93,6 +100,23 @@ async def on_ready():
 @bot.tree.command(name="help", description="Prints debug information.")
 async def help(interaction: discord.Interaction):
     await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
+
+def infoEmbed(info:any, ticker:str, static:dict):
+    embed = discord.Embed(color=discord.Colour.teal(), title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))})")
+    embed.set_author(name=f"{str.upper(ticker)}")
+    embed.add_field(name=f"Open: {static.get('getDayOpen'):.2f}",value=f"Close*: {static.get('getDayClose'):.2f}",inline=True)
+    embed.add_field(name=f"High: {info.getDayHigh():.2f}",value=f"Low: {info.getDayLow():.2f}",inline=True)
+    embed.add_field(name=f"52W H: {static.get('get52wkHigh'):.2f}",value=f"52W L: {static.get('get52wkLow'):.2f}",inline=True)
+
+    embed.add_field(name=f"Volume: {humanizer.suffix(static.get('getVolume'))}",value=f"Avg Volume: {humanizer.suffix(static.get('getAvgVolume'))}",inline=True)
+    embed.add_field(name=f"P/E: {static.get('getPERatio'):.2f}",value=f"EPS: {static.get('getEPSRatio'):.2f}",inline=True)
+    embed.add_field(name=f"Beta: {static.get('getBeta'):.2f}",value=f"Mkt Cap: {humanizer.suffix(static.get('getMktCap'))}",inline=True)
+
+    embed.add_field(name=f"Annual Yield: {static.get('getAnnualYield')}%",value=f"Monthly Yield: {static.get('getMonthlyYield')}%",inline=True)
+    embed.add_field(name=f"Ex. Div.: {static.get('getExDividendDate')}",value=f"Div. Payout: {static.get('getPayDate')}")
+    embed.add_field(name=f"Expected Amount: {static.get('getDividendAmount')}", value=f"Expected Change: {static.get('getDividendChange')}")
+    embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
+    return embed
 
 @bot.tree.command(name="info", description="Provide latest quote and news of a given ticker")
 @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
@@ -112,18 +136,29 @@ async def help(interaction: discord.Interaction):
 async def info(interaction: discord.Interaction, ticker: str, duration:str):
     await interaction.response.defer()
     info = functions.yFinanceWrapper(ticker=ticker)
-    embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Quote")
-    embed.add_field(name=f"Current Price: {info.getCurrentPrice():.2f}",value=f"Previous Close: {info.getDayClose():.2f}",inline=True)
-    embed.add_field(name=f"High: {info.getDayHigh():.2f}",value=f"Low: {info.getDayLow():.2f}",inline=True)
-    embed.add_field(name=f"52W H: {info.get52wkHigh():.2f}",value=f"52W L: {info.get52wkLow():.2f}",inline=True)
 
-    embed.add_field(name=f"Volume: {info.getVolume()}",value=f"Avg Volume: {info.getAvgVolume}",inline=True)
-    embed.add_field(name=f"P/E: {info.getPERatio():.2f}",value=f"EPS: {info.getEPSRatio():.2f}",inline=True)
-    embed.add_field(name=f"Beta: {info.getBeta():.2f}",value=f"Mkt Cap: {info.getMktCap():.2f}",inline=True)
+    static = {
+        "getDayOpen":info.getDayOpen(),
+        "getDayClose":info.getDayClose(),
+        "get52wkHigh":info.get52wkHigh(),
+        "get52wkLow":info.get52wkLow(),
+        "getVolume":info.getVolume(),
+        "getAvgVolume":info.getAvgVolume(),
+        "getPERatio":info.getPERatio(),
+        "getEPSRatio":info.getEPSRatio(),
+        "getBeta":info.getBeta(),
+        "getMktCap":info.getMktCap(),
+        "getAnnualYield":info.getAnnualYield(),
+        "getMonthlyYield":info.getMonthlyYield(),
+        "getExDividendDate":info.getExDividendDate(),
+        "getPayDate":info.getPayDate(),
+        "getDividendAmount":info.getDividendAmount(),
+        "getDividendChange":info.getDividendChange(),
+    }
 
-    embed.add_field(name=f"Yield: {info.getDividendYield()}%",value=f"Ex. Dividend Date: {info.getExDividendDate()}",inline=True)
-
-    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed)
+    update = Update(info=info,ticker=ticker,static=static)
+    embed = infoEmbed(info=info,ticker=ticker,static=static)
+    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed, view=update)
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
 @app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price = "Price to set alert for", identifier = "Identifier used for deletion")
