@@ -75,7 +75,7 @@ class yFinanceWrapper():
         return self.getFastInfo()["lastPrice"]
 
     def getPriceChange(self):
-        return self.getCurrentPrice() - self.getDayOpen()
+        return ((self.getCurrentPrice()/self.getDayOpen())*100)-100
 
     def getDayOpen(self):
         return self.getFastInfo()["open"]
@@ -129,11 +129,11 @@ class yFinanceWrapper():
 
     def getDividendAmount(self):
         dividends = self.getDividendsPayout()
-        return dividends[dividends.index[-1]]
+        return dividends[dividends.index[-1]] if dividends is not "-" else dividends
     
     def getDividendChange(self):
         dividends = self.getDividendsPayout()
-        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%"
+        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%" if dividends is not "-" else dividends
 
     def getMktCap(self):
         return self.getStockInfo()["marketCap"]

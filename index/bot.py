@@ -102,7 +102,7 @@ async def help(interaction: discord.Interaction):
     await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
 
 def infoEmbed(info:any, ticker:str, static:dict):
-    embed = discord.Embed(color=discord.Colour.teal(), title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))})")
+    embed = discord.Embed(color=discord.Colour.teal(), title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))}%)")
     embed.set_author(name=f"{str.upper(ticker)}")
     embed.add_field(name=f"Open: {static.get('getDayOpen'):.2f}",value=f"Close*: {static.get('getDayClose'):.2f}",inline=True)
     embed.add_field(name=f"High: {info.getDayHigh():.2f}",value=f"Low: {info.getDayLow():.2f}",inline=True)
@@ -118,7 +118,36 @@ def infoEmbed(info:any, ticker:str, static:dict):
     embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
     return embed
 
-@bot.tree.command(name="info", description="Provide latest quote and news of a given ticker")
+@bot.tree.command(name="quote", description="Provide latest chart and quote of a given ticker")
+@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
+async def quote(interaction: discord.Interaction, ticker: str, duration:str):
+    await interaction.response.defer()
+    info = functions.yFinanceWrapper(ticker=ticker)
+
+    static = {
+        "getDayOpen":info.getDayOpen(),
+        "getDayClose":info.getDayClose(),
+        "get52wkHigh":info.get52wkHigh(),
+        "get52wkLow":info.get52wkLow(),
+        "getVolume":info.getVolume(),
+        "getAvgVolume":info.getAvgVolume(),
+        "getPERatio":info.getPERatio(),
+        "getEPSRatio":info.getEPSRatio(),
+        "getBeta":info.getBeta(),
+        "getMktCap":info.getMktCap(),
+        "getAnnualYield":info.getAnnualYield(),
+        "getMonthlyYield":info.getMonthlyYield(),
+        "getExDividendDate":info.getExDividendDate(),
+        "getPayDate":info.getPayDate(),
+        "getDividendAmount":info.getDividendAmount(),
+        "getDividendChange":info.getDividendChange(),
+    }
+
+    update = Update(info=info,ticker=ticker,static=static)
+    embed = infoEmbed(info=info,ticker=ticker,static=static)
+    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed, view=update)
+
+@bot.tree.command(name="chart", description="Provide latest chart and quote of a given ticker")
 @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
 @app_commands.choices(duration=[
     app_commands.Choice(name="Past 24 Hours (1d)", value="1d"),
@@ -133,7 +162,7 @@ def infoEmbed(info:any, ticker:str, static:dict):
     app_commands.Choice(name="Past 10 Years (10y)", value="10y"),
     app_commands.Choice(name="Maximum displayable (all)", value="max"),
 ])
-async def info(interaction: discord.Interaction, ticker: str, duration:str):
+async def chart(interaction: discord.Interaction, ticker: str, duration:str):
     await interaction.response.defer()
     info = functions.yFinanceWrapper(ticker=ticker)
 
