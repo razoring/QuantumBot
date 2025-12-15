@@ -30,10 +30,11 @@ logging.getLogger("cmdstanpy").disabled = True
 class yFinanceWrapper:
     def __init__(self, ticker):
         self._symbol = yf.Ticker(ticker=ticker)
+        self._fastInfo = self._symbol.get_fast_info()
         self._info = self._symbol.info
-        self._dividends = self._dividends
-        self._historyYear = self._symbol.history(period="1y")
-        self._historyDay = self._historyYear.tail(1)
+        #self._dividends = self._symbol.dividends
+        #self._historyYear = self._symbol.history(period="1y")
+        #self._historyDay = self._historyYear.tail(1)
 
     def getHistoryYear(self) -> pd.DataFrame:
         return self._historyYear
@@ -47,41 +48,54 @@ class yFinanceWrapper:
     def getDividendsPayout(self):
         return self._dividends
     
+    def getFastInfo(self):
+        return self._fastInfo
+    
+    def getCurrentPrice(self):
+        return self.getFastInfo()["lastPrice"]
+
     def getDayOpen(self):
+        return self.getFastInfo()["open"]
         return self.getHistoryDay()["Open"]
 
     def getDayClose(self):
+        return self.getFastInfo()["previousClose"]
         return self.getHistoryDay()["Close"]
 
     def getDayHigh(self):
+        return self.getFastInfo()["dayHigh"]
         return self.getHistoryDay()["High"]
 
     def getDayLow(self):
+        return self.getFastInfo()["dayLow"]
         return self.getHistoryDay()["Low"]
 
     def get52wkLow(self):
+        return self.getFastInfo()["yearLow"]
         return float(self.getHistoryYear()["High"].max())
 
     def get52wkHigh(self):
+        return self.getFastInfo()["yearHigh"]
         return float(self.getHistoryYear()["Low"].max())
     
     def getVolume(self):
+        return self.getFastInfo()["lastVolume"]
         return self.getHistoryDay()["Volume"]
     
     def getAvgVolume(self):
-        return self.getHistoryYear()["averageVolume"]
+        return self.getStockInfo()["averageVolume"]
     
     def getPERatio(self):
-        return self.getStockInfo()["TrailingPE"]
+        return self.getStockInfo()["trailingPE"]
     
     def getEPSRatio(self):
-        return self.getStockInfo()["TrailingEPS"]
+        return self.getStockInfo()["trailingEps"]
     
-    def getDividedYield(self):
-        return self.getStockInfo()["dividendRate"]
+    def getDividendYield(self):
+        return self.getStockInfo()["trailingAnnualDividendRate"]
     
     def getExDividendDate(self):
-       return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date) if self.getDividedYield() > 0 else "-"
+       return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date) if self.getDividendYield() > 0 else "-"
     
     def getMktCap(self):
         return self.getStockInfo()["marketCap"]

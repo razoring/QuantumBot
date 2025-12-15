@@ -22,8 +22,6 @@ bot = commands.Bot(intents=intents, command_prefix="!")
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
 """TODO:
-- Make an error-safe yfinance library of the most common types of data
-- Make a stocks info command
 - Stock news from yahoo finance
 - Make a points system
 - Implement the AI
@@ -99,20 +97,33 @@ async def help(interaction: discord.Interaction):
 @bot.tree.command(name="info", description="Provide latest quote and news of a given ticker")
 @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
 @app_commands.choices(duration=[
-    app_commands.Choice(name="1 Day", value="1d"),
-    app_commands.Choice(name="5 Days", value="5d"),
-    app_commands.Choice(name="1 Month", value="1mo"),
-    app_commands.Choice(name="3 Months", value="3mo"),
-    app_commands.Choice(name="6 Months", value="6mo"),
-    app_commands.Choice(name="1 Year", value="1y"),
-    app_commands.Choice(name="1 Year to Date", value="ytd"),
-    app_commands.Choice(name="2 Years", value="2y"),
-    app_commands.Choice(name="5 Years", value="5y"),
-    app_commands.Choice(name="10 Years", value="10y"),
-    app_commands.Choice(name="Max", value="max"),
+    app_commands.Choice(name="Past 24 Hours (1d)", value="1d"),
+    app_commands.Choice(name="Past Week (5d)", value="5d"),
+    app_commands.Choice(name="Past Month (1mo)", value="1mo"),
+    app_commands.Choice(name="Past 3 Months (3mo)", value="3mo"),
+    app_commands.Choice(name="Past 6 Months (6mo)", value="6mo"),
+    app_commands.Choice(name="Past Year (1y)", value="1y"),
+    app_commands.Choice(name="Past Year from Today (ytd)", value="ytd"),
+    app_commands.Choice(name="Past 2 Years (2y)", value="2y"),
+    app_commands.Choice(name="Past 5 Years (5y)", value="5y"),
+    app_commands.Choice(name="Past 10 Years (10y)", value="10y"),
+    app_commands.Choice(name="Maximum displayable (all)", value="max"),
 ])
-async def info(interaction: discord.Interaction, ticker: str, duration):
-    pass
+async def info(interaction: discord.Interaction, ticker: str, duration:str):
+    await interaction.response.defer()
+    info = functions.yFinanceWrapper(ticker=ticker)
+    embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Quote")
+    embed.add_field(name=f"Current Price: {info.getCurrentPrice():.2f}",value=f"Previous Close: {info.getDayClose():.2f}",inline=True)
+    embed.add_field(name=f"High: {info.getDayHigh():.2f}",value=f"Low: {info.getDayLow():.2f}",inline=True)
+    embed.add_field(name=f"52W H: {info.get52wkHigh():.2f}",value=f"52W L: {info.get52wkLow():.2f}",inline=True)
+
+    embed.add_field(name=f"Volume: {info.getVolume()}",value=f"Avg Volume: {info.getAvgVolume}",inline=True)
+    embed.add_field(name=f"P/E: {info.getPERatio():.2f}",value=f"EPS: {info.getEPSRatio():.2f}",inline=True)
+    embed.add_field(name=f"Beta: {info.getBeta():.2f}",value=f"Mkt Cap: {info.getMktCap():.2f}",inline=True)
+
+    embed.add_field(name=f"Yield: {info.getDividendYield()}%",value=f"Ex. Dividend Date: {info.getExDividendDate()}",inline=True)
+
+    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed)
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
 @app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price = "Price to set alert for", identifier = "Identifier used for deletion")
@@ -138,7 +149,7 @@ async def predict(interaction: discord.Interaction, ticker: str, model: typing.O
     await interaction.response.defer()
     feedback = Feedback(90, ticker)
 
-    embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} (90 day prediction)")
+    embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
     embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
     if type(model) is not type(None):
         selectedModel = int(model.value)
