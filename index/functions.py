@@ -28,7 +28,66 @@ logging.getLogger("prophet").setLevel(logging.WARNING) # pre setup / disable log
 logging.getLogger("cmdstanpy").disabled = True
 
 class yFinanceWrapper:
-    pass
+    def __init__(self, ticker):
+        self._symbol = yf.Ticker(ticker=ticker)
+        self._info = self._symbol.info
+        self._dividends = self._dividends
+        self._historyYear = self._symbol.history(period="1y")
+        self._historyDay = self._historyYear.tail(1)
+
+    def getHistoryYear(self) -> pd.DataFrame:
+        return self._historyYear
+    
+    def getHistoryDay(self) -> pd.DataFrame:
+        return self._historyDay
+    
+    def getStockInfo(self):
+        return self._info
+    
+    def getDividendsPayout(self):
+        return self._dividends
+    
+    def getDayOpen(self):
+        return self.getHistoryDay()["Open"]
+
+    def getDayClose(self):
+        return self.getHistoryDay()["Close"]
+
+    def getDayHigh(self):
+        return self.getHistoryDay()["High"]
+
+    def getDayLow(self):
+        return self.getHistoryDay()["Low"]
+
+    def get52wkLow(self):
+        return float(self.getHistoryYear()["High"].max())
+
+    def get52wkHigh(self):
+        return float(self.getHistoryYear()["Low"].max())
+    
+    def getVolume(self):
+        return self.getHistoryDay()["Volume"]
+    
+    def getAvgVolume(self):
+        return self.getHistoryYear()["averageVolume"]
+    
+    def getPERatio(self):
+        return self.getStockInfo()["TrailingPE"]
+    
+    def getEPSRatio(self):
+        return self.getStockInfo()["TrailingEPS"]
+    
+    def getDividedYield(self):
+        return self.getStockInfo()["dividendRate"]
+    
+    def getExDividendDate(self):
+       return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date) if self.getDividedYield() > 0 else "-"
+    
+    def getMktCap(self):
+        return self.getStockInfo()["marketCap"]
+    
+    def getBeta(self):
+        return self.getStockInfo()["beta"]
 
 class Projection:
     def __init__(self):

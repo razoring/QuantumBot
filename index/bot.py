@@ -22,7 +22,6 @@ bot = commands.Bot(intents=intents, command_prefix="!")
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
 """TODO:
-- Make a feedback system (using webhooks)
 - Make an error-safe yfinance library of the most common types of data
 - Make a stocks info command
 - Stock news from yahoo finance
@@ -34,6 +33,8 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 - Alert command
 - Release version with github
 - BACKTEST DATA
+- Feedback needs to actually work
+- Caching system
 """
 
 projection = functions.Projection()
@@ -96,8 +97,21 @@ async def help(interaction: discord.Interaction):
     await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
 
 @bot.tree.command(name="info", description="Provide latest quote and news of a given ticker")
-@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
-async def info(interaction: discord.Interaction, ticker: str):
+@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
+@app_commands.choices(duration=[
+    app_commands.Choice(name="1 Day", value="1d"),
+    app_commands.Choice(name="5 Days", value="5d"),
+    app_commands.Choice(name="1 Month", value="1mo"),
+    app_commands.Choice(name="3 Months", value="3mo"),
+    app_commands.Choice(name="6 Months", value="6mo"),
+    app_commands.Choice(name="1 Year", value="1y"),
+    app_commands.Choice(name="1 Year to Date", value="ytd"),
+    app_commands.Choice(name="2 Years", value="2y"),
+    app_commands.Choice(name="5 Years", value="5y"),
+    app_commands.Choice(name="10 Years", value="10y"),
+    app_commands.Choice(name="Max", value="max"),
+])
+async def info(interaction: discord.Interaction, ticker: str, duration):
     pass
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
@@ -125,24 +139,22 @@ async def predict(interaction: discord.Interaction, ticker: str, model: typing.O
     feedback = Feedback(90, ticker)
 
     embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} (90 day prediction)")
-    #embed.set_footer(text=f"{interaction.user.mention}")
+    embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
     if type(model) is not type(None):
         selectedModel = int(model.value)
     else:
         selectedModel = 2
 
     warning = False
-    image_buffer = projection.create(ticker, selectedModel)
-    if image_buffer is None:
+    img = projection.create(ticker, selectedModel)
+    if img is None:
         warning = True
-        image_buffer = projection.create(ticker, 1)
-    if image_buffer:
-        file = discord.File(image_buffer, filename="output.png")
+        img = projection.create(ticker, 1)
+    if img:
+        file = discord.File(img, filename="output.png")
         embed.set_image(url="attachment://output.png")
-
         if warning == True:
             embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
-
         await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if warning == False else 1)]} Model) {interaction.user.mention}:",file=file, embed=embed, view=feedback)
     else:
         await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=feedback)
