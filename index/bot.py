@@ -189,9 +189,18 @@ async def chart(interaction: discord.Interaction, ticker: str, duration:str):
         "getDividendChange":info.getDividendChange(),
     }
 
-    update = Update(info=info,ticker=ticker,static=static,duration=duration)
-    embed = infoEmbed(info=info,ticker=ticker,static=static,duration=duration)
-    await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
+    update = Update(info=info,ticker=ticker,static=static)
+    embed = infoEmbed(info=info,ticker=ticker,static=static)
+    invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+    icon = interaction.guild.icon.url if interaction.guild.icon != None else "index/assets/placeholderIcon.jpg"
+
+    img = charts.history(ticker, duration, interaction.guild.name, invite.url, icon)
+    if img:
+        file = discord.File(img, filename="output.png")
+        embed.set_image(url="attachment://output.png")
+        await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:",file=file, embed=embed, view=update)
+    else:
+        await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=update)
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
 @app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price = "Price to set alert for", identifier = "Identifier used for deletion")
