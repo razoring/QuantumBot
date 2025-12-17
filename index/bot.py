@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from discord_webhook import DiscordWebhook
 from urllib.parse import urlparse as url
 
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -93,14 +94,6 @@ class Feedback(discord.ui.View):
                 self.remove_item(child)
         await interaction.message.edit(view=self)
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-
-@bot.tree.command(name="help", description="Prints debug information.")
-async def help(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
-
 def infoEmbed(info:any, ticker:str, static:dict):
     embed = discord.Embed(color=discord.Colour.teal(), title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))}%)")
     embed.set_author(name=f"{str.upper(ticker)}")
@@ -118,9 +111,18 @@ def infoEmbed(info:any, ticker:str, static:dict):
     embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
     return embed
 
-@bot.tree.command(name="quote", description="Provide latest chart and quote of a given ticker")
-@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
-async def quote(interaction: discord.Interaction, ticker: str, duration:str):
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/predict"))
+
+@bot.tree.command(name="help", description="Prints debug information.")
+async def help(interaction: discord.Interaction):
+    await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
+
+@bot.tree.command(name="quote", description="Provide latest quote of a given ticker only")
+@app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
+async def quote(interaction: discord.Interaction, ticker: str):
     await interaction.response.defer()
     info = functions.yFinanceWrapper(ticker=ticker)
 
@@ -145,7 +147,7 @@ async def quote(interaction: discord.Interaction, ticker: str, duration:str):
 
     update = Update(info=info,ticker=ticker,static=static)
     embed = infoEmbed(info=info,ticker=ticker,static=static)
-    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed, view=update)
+    await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
 
 @bot.tree.command(name="chart", description="Provide latest chart and quote of a given ticker")
 @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
@@ -187,7 +189,7 @@ async def chart(interaction: discord.Interaction, ticker: str, duration:str):
 
     update = Update(info=info,ticker=ticker,static=static)
     embed = infoEmbed(info=info,ticker=ticker,static=static)
-    await interaction.followup.send(f"Here is the current charts {interaction.user.mention}", embed=embed, view=update)
+    await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
 @app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price = "Price to set alert for", identifier = "Identifier used for deletion")

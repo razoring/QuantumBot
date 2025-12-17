@@ -63,7 +63,7 @@ class yFinanceWrapper():
         return self._info
     
     def getDividendsPayout(self):
-        return self._dividends if self.getAnnualYield() > 0 else "-"
+        return self._dividends if self.getAnnualYield() > 0 else 0
     
     def getCalendar(self):
         return self._calendar
@@ -109,16 +109,20 @@ class yFinanceWrapper():
         return self.getStockInfo()["averageVolume"]
     
     def getPERatio(self):
-        return self.getStockInfo()["trailingPE"]
+        stock = self.getStockInfo()
+        return stock["trailingPE"] if "trailingPE" in stock else 0
     
     def getEPSRatio(self):
-        return self.getStockInfo()["trailingEps"]
+        stock = self.getStockInfo()
+        return stock["trailingEps"] if "trailingEps" in stock else 0
     
     def getAnnualYield(self):
-        return round(float(self.getStockInfo()["trailingAnnualDividendRate"])*100,2)
+        stock = self.getStockInfo()
+        return round(float(stock["trailingAnnualDividendRate"])*100,2) if "trailingAnnualDividendRate" in stock else 0
     
     def getMonthlyYield(self):
-        return round(self.getAnnualYield()/12.0,2)
+        yields = self.getAnnualYield()
+        return round(yields/12.0,2) if yields != 0 else yields
     
     def getExDividendDate(self):
        return str(datetime.fromtimestamp(self.getStockInfo()["exDividendDate"]).date()) if self.getAnnualYield() > 0 else "-"
@@ -129,17 +133,19 @@ class yFinanceWrapper():
 
     def getDividendAmount(self):
         dividends = self.getDividendsPayout()
-        return dividends[dividends.index[-1]] if dividends is not "-" else dividends
+        return dividends[dividends.index[-1]] if dividends != 0 else dividends
     
     def getDividendChange(self):
         dividends = self.getDividendsPayout()
-        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%" if dividends is not "-" else dividends
+        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%" if dividends != 0 else dividends
 
     def getMktCap(self):
-        return self.getStockInfo()["marketCap"]
+        stock = self.getStockInfo()
+        return stock["marketCap"] if "marketCap" in stock else 0
     
     def getBeta(self):
-        return self.getStockInfo()["beta"]
+        stock = self.getStockInfo()
+        return stock["beta"] if "beta" in stock else 0
 
 class Projection:
     def __init__(self):
@@ -228,7 +234,9 @@ class Projection:
         # floor points
         points = np.maximum(points, 0.01)
         # plot the graph
-        plt.rc("font", weight="bold", size=10)
+        plt.rc("font",
+               #weight="bold", 
+               size=10)
         fig, ax = plt.subplots(figsize=(20, 10), dpi=120)
         fig.patch.set_facecolor(color=bgDark)
         ax.plot(plotHistory.index, plotHistory["Close"], color=brand, linewidth=2, zorder=10)
@@ -257,16 +265,16 @@ class Projection:
             ax.fill_between(futureDates, lower_curve, upper_curve, color=brand, alpha=0.15, lw=0)
 
         # legend
-        elements = []
+        """elements = []
         if model != 1:
             for i in range(0, mid, 1): 
-                q = quantiles[i]
+                q = quantiles[i]b
                 ci = int(round(50-((1 - 2*q) * 50)))
                 simulated_alpha = 1 - (1 - 0.15) ** (i + 1)
                 elements.append(Patch(facecolor=brand, edgecolor=None, alpha=simulated_alpha, label=f"{ci}% Probability"))
         elements.append(Line2D([0], [0], color=brand, lw=2, label=("50% Probability" if model != 1 else "Prediction"), linestyle= ("dashed" if model == 1 else "solid")))
         leg = ax.legend( handles=elements, loc="lower left", facecolor=bgDark, edgecolor="gray", framealpha=1.0, fancybox=True, labelcolor="white", fontsize=8, borderpad=0.8)
-        leg.get_frame().set_linewidth(1)
+        leg.get_frame().set_linewidth(1)"""
 
         # 50% line
         median = points[mid] # make them start at the same spot
@@ -279,7 +287,6 @@ class Projection:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
         ax.tick_params(axis="x", rotation=90, colors="gray")
         #plt.setp(ax.get_xticklabels(), weight="bold")
-        leg.get_frame().set_linewidth(1)
         #plt.setp(ax.get_yticklabels(), weight="bold")
 
         # y ticks
@@ -313,7 +320,7 @@ class Projection:
         # combine both line and fan graphs
         dates = list(plotHistory.index) + futureDates
         plt.xlim(dates[0], dates[-1])
-
+        plt.title(f"NVDA Prediction (90d)",fontdict={"weight":"bold","size":40,"color":"gray"},loc="center")
         plt.tight_layout()
         # save to memory buffer
         buf = io.BytesIO()
