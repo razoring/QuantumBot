@@ -19,13 +19,57 @@ from scipy.stats import norm
 from datetime import datetime, timedelta
 
 from prophet import Prophet as ph
+from pyfonts import set_default_font, load_google_font
+from PIL import Image, ImageFont, ImageDraw, ImageFilter
 
-from themes import brand, bgDark
+import themes
 # end of imports
 
 matplotlib.use("Agg") # set backend / disables ui opening
 logging.getLogger("prophet").setLevel(logging.WARNING) # pre setup / disable logging
 logging.getLogger("cmdstanpy").disabled = True
+set_default_font(load_google_font("Montserrat",weight="bold"))
+
+class Stamp:
+    def __init__(self, name, url, icon):
+        self.serverName = name
+        self.serverInvite = str(url)
+        self.serverIcon = icon
+
+    def font(self, size:int):
+        return ImageFont.truetype(font="index/assets/Montserrat-Bold.ttf", size=size)
+    
+    def rounded(self, image: Image.Image, radius: int) -> Image.Image:
+        image = image.convert("RGBA")
+        mask = Image.new("L", image.size, 0)
+        draw = ImageDraw.Draw(mask)
+        draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
+        rounded = Image.new("RGBA", image.size)
+        rounded.paste(image, (0, 0), mask=mask)
+        return rounded
+
+    def image(self, chart):
+        main = Image.open("index/assets/main.png").convert("RGBA")
+        legend = Image.open("index/assets/legend.png").convert("RGBA")
+        chart = Image.open(chart).resize((2400,1200)).convert("RGBA")
+        blur = chart.crop(box=(18,18,150,242)).filter(ImageFilter.BoxBlur(10))
+        blurred = self.rounded(blur,24)
+
+        img = Image.new(mode="RGB", size=(2500,1500), color=(10, 19, 27))
+        serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93,93))
+        img.paste(chart, (50,250), mask=chart)
+        img.paste(blurred, (68,269), mask=blurred)
+        img.paste(serverIcon, (1045,76), serverIcon)
+        img.paste(legend, (24,224), legend)
+        img.paste(main, (0,0), main)
+        canvas = ImageDraw.Draw(im=img)
+        canvas.text(xy=(1153,75), text=self.serverName, font=self.font(48), fill="white")
+        canvas.text(xy=(1153,135), text=self.serverInvite.replace("https://",""), font=self.font(28), fill=(112,128,144))
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        return buf
 
 class Humanizer:
     def __init__(self):
@@ -42,7 +86,7 @@ class Humanizer:
     def sign(self, number):
         return "+"+str(number) if number > 0 else number
 
-class yFinanceWrapper():
+class yFinanceWrapper:
     def __init__(self, ticker):
         self._symbol = yf.Ticker(ticker=ticker)
         self._fastInfo = self._symbol.get_fast_info()
@@ -63,7 +107,7 @@ class yFinanceWrapper():
         return self._info
     
     def getDividendsPayout(self):
-        return self._dividends if self.getAnnualYield() > 0 else 0
+        return self._dividends if self.getAnnualYield() > 0 else None
     
     def getCalendar(self):
         return self._calendar
@@ -118,7 +162,7 @@ class yFinanceWrapper():
     
     def getAnnualYield(self):
         stock = self.getStockInfo()
-        return round(float(stock["trailingAnnualDividendRate"])*100,2) if "trailingAnnualDividendRate" in stock else 0
+        return round(float(stock["trailingAnnualDividendRate"]),2) if "trailingAnnualDividendRate" in stock else 0
     
     def getMonthlyYield(self):
         yields = self.getAnnualYield()
@@ -133,11 +177,11 @@ class yFinanceWrapper():
 
     def getDividendAmount(self):
         dividends = self.getDividendsPayout()
-        return dividends[dividends.index[-1]] if dividends != 0 else dividends
+        return dividends[dividends.index[-1]] if type(dividends) != None else 0
     
     def getDividendChange(self):
         dividends = self.getDividendsPayout()
-        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]]))*100-100)+"%" if dividends != 0 else dividends
+        return str((float(dividends[dividends.index[-1]])/float(dividends[dividends.index[-2]])-1)*100)+"%" if type(dividends) != None else 0
 
     def getMktCap(self):
         stock = self.getStockInfo()
@@ -147,7 +191,7 @@ class yFinanceWrapper():
         stock = self.getStockInfo()
         return stock["beta"] if "beta" in stock else 0
 
-class Projection:
+class Charts:
     def __init__(self):
         pass
 
@@ -227,7 +271,7 @@ class Projection:
             prophetTrend = np.sum(prophetSum, axis=0)
         return prophetTrend, prophetSigma
 
-    def _createPlot(self, model, history, lastDate, futureDays, quantiles, points):
+    def _createPrediction(self, ticker, model, history, lastDate, futureDays, quantiles, points):
         plotHistory = history[history.index > lastDate - timedelta(days=7)]
         futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
 
@@ -238,8 +282,8 @@ class Projection:
                #weight="bold", 
                size=10)
         fig, ax = plt.subplots(figsize=(20, 10), dpi=120)
-        fig.patch.set_facecolor(color=bgDark)
-        ax.plot(plotHistory.index, plotHistory["Close"], color=brand, linewidth=2, zorder=10)
+        fig.patch.set_facecolor(color=themes.bgDark)
+        ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
         minY = min(plotHistory["Close"].min(), np.min(points))
         maxY = max(plotHistory["Close"].max(), np.max(points))
         xNums = mdates.date2num(plotHistory.index)
@@ -250,8 +294,8 @@ class Projection:
         verts = [(xNums[0], yFloor)] + list(zip(xNums, yVals)) + [(xNums[-1], yFloor)]
         poly = Polygon(verts, transform=ax.transData, facecolor="none", edgecolor="none")
         ax.add_patch(poly)
-        cTop = to_rgba(brand, alpha=0.3)
-        cBot = to_rgba(brand, alpha=0.0)
+        cTop = to_rgba(themes.brand, alpha=0.3)
+        cBot = to_rgba(themes.brand, alpha=0.0)
         gradientCmap = LinearSegmentedColormap.from_list("history_gradient", [cBot, cTop])
         gradient = np.linspace(0, 1, 256).reshape(-1, 1)
         im = ax.imshow(gradient, aspect="auto", cmap=gradientCmap, origin="lower", extent=[xNums[0], xNums[-1], yFloor, yVals.max()], zorder=1)
@@ -262,30 +306,18 @@ class Projection:
         for i in range(mid):
             lower_curve = points[i]
             upper_curve = points[-(i+1)]
-            ax.fill_between(futureDates, lower_curve, upper_curve, color=brand, alpha=0.15, lw=0)
-
-        # legend
-        """elements = []
-        if model != 1:
-            for i in range(0, mid, 1): 
-                q = quantiles[i]b
-                ci = int(round(50-((1 - 2*q) * 50)))
-                simulated_alpha = 1 - (1 - 0.15) ** (i + 1)
-                elements.append(Patch(facecolor=brand, edgecolor=None, alpha=simulated_alpha, label=f"{ci}% Probability"))
-        elements.append(Line2D([0], [0], color=brand, lw=2, label=("50% Probability" if model != 1 else "Prediction"), linestyle= ("dashed" if model == 1 else "solid")))
-        leg = ax.legend( handles=elements, loc="lower left", facecolor=bgDark, edgecolor="gray", framealpha=1.0, fancybox=True, labelcolor="white", fontsize=8, borderpad=0.8)
-        leg.get_frame().set_linewidth(1)"""
+            ax.fill_between(futureDates, lower_curve, upper_curve, color=themes.brand, alpha=0.15, lw=0)
 
         # 50% line
         median = points[mid] # make them start at the same spot
-        ax.plot(futureDates, median, color=brand, linewidth=2, linestyle= ("dashed" if model == 1 else "solid"))
+        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle= ("dashed" if model == 1 else "solid"))
 
         # labels
         ax = plt.gca()
-        ax.set_facecolor(bgDark)
+        ax.set_facecolor(themes.bgDark)
         ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-        ax.tick_params(axis="x", rotation=90, colors="gray")
+        ax.tick_params(axis="x", rotation=90, colors=themes.grayDark)
         #plt.setp(ax.get_xticklabels(), weight="bold")
         #plt.setp(ax.get_yticklabels(), weight="bold")
 
@@ -302,25 +334,26 @@ class Projection:
         ax.yaxis.set_major_formatter(FormatStrFormatter("$%.2f"))
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
-        ax.tick_params(axis="y", colors="gray")
-        bbox = dict(boxstyle="square,pad=0.3", fc=bgDark, ec="none", alpha=1.0)
-        ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=brand, fontweight="bold", fontsize=11, bbox=bbox,)
+        ax.tick_params(axis="y", colors=themes.grayDark)
+        bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
+        ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox,)
         #ax.text(futureDates[-1], median[-1], f" ${median[-1]:.2f}", color=colour, fontweight="bold", fontsize=11, va="center", ha="left")
 
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
-        ax.spines["right"].set_color("gray")
-        ax.spines["bottom"].set_color("gray")
+        ax.spines["right"].set_color(themes.grayDark)
+        ax.spines["bottom"].set_color(themes.grayDark)
         
         # grid
-        ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5)
-        ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3) # added x-grid to see days better
+        ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
+        ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark) # added x-grid to see days better
         plt.ylim(minY * 0.98, maxY * 1.02)
         
         # combine both line and fan graphs
         dates = list(plotHistory.index) + futureDates
         plt.xlim(dates[0], dates[-1])
-        plt.title(f"NVDA Prediction (90d)",fontdict={"weight":"bold","size":40,"color":"gray"},loc="center")
+        plt.title(f"{str.upper(ticker)} Prediction (90d)",fontdict={"weight":"black","size":40,"color":themes.brand
+        },loc="center")
         plt.tight_layout()
         # save to memory buffer
         buf = io.BytesIO()
@@ -330,7 +363,10 @@ class Projection:
 
         return buf
 
-    def create(self, ticker, model):
+    def history(self, ticker, duration, serverName, serverInvite, serverIcon):
+        pass
+
+    def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         
         stock = yf.Ticker(ticker)
@@ -373,4 +409,5 @@ class Projection:
                     combinedSmoothing.append(prophetTrend + spread[i])
                 points = np.array(combinedSmoothing)
         
-        return self._createPlot(model=model, history=history, lastDate=lastDate, futureDays=futureDays, quantiles=quantiles, points=points)
+        chart = self._createPrediction(ticker=ticker, model=model, history=history, lastDate=lastDate, futureDays=futureDays, quantiles=quantiles, points=points)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chart)

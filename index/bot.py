@@ -18,6 +18,8 @@ WEBHOOK = os.getenv("FEEDBACK_WEBHOOK")
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.guilds = True
+intents.invites = True
 bot = commands.Bot(intents=intents, command_prefix="!")
 
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
@@ -36,7 +38,7 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 - Caching system
 """
 
-projection = functions.Projection()
+charts = functions.Charts()
 humanizer = functions.Humanizer()
 
 class Update(discord.ui.View):
@@ -187,8 +189,8 @@ async def chart(interaction: discord.Interaction, ticker: str, duration:str):
         "getDividendChange":info.getDividendChange(),
     }
 
-    update = Update(info=info,ticker=ticker,static=static)
-    embed = infoEmbed(info=info,ticker=ticker,static=static)
+    update = Update(info=info,ticker=ticker,static=static,duration=duration)
+    embed = infoEmbed(info=info,ticker=ticker,static=static,duration=duration)
     await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
 
 @bot.tree.command(name="alerts", description="Create or check alerts for your given ticker")
@@ -221,12 +223,16 @@ async def predict(interaction: discord.Interaction, ticker: str, model: typing.O
         selectedModel = int(model.value)
     else:
         selectedModel = 2
-
+    
     warning = False
-    img = projection.create(ticker, selectedModel)
+
+    invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+    icon = interaction.guild.icon.url if interaction.guild.icon != None else "index/assets/placeholderIcon.jpg"
+
+    img = charts.project(ticker, selectedModel, interaction.guild.name, invite.url, icon)
     if img is None:
         warning = True
-        img = projection.create(ticker, 1)
+        img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
     if img:
         file = discord.File(img, filename="output.png")
         embed.set_image(url="attachment://output.png")
