@@ -175,24 +175,41 @@ class Charts:
         options = stock.options
         if len(options) <= 1: return None
 
+        #Ensure lastDate is treated as the 'start' of calc
+        #If running at night, lastDate is likely the previous close
+        start_date = lastDate.date()
+
         for exp in options:
             try:
                 expDate = datetime.strptime(exp, "%Y-%m-%d").date()
-                expDays = (expDate - lastDate.date()).days
                 
-                if expDays <= 0: continue
-                if expDays > forward + 15: break
+                #Calculate raw days diff (avoids delta*sqrt(t) to be 0)
+                daysDiff = (expDate - start_date).days
+                
+                #Skip past dates but allow 0 (today/tomorrow expirations) to be processed by clamping them to a minimum value below
+                if daysDiff < 0: continue
+                
+                #Stop if too far into the future
+                if daysDiff > forward + 15: break
                 
                 opt = stock.option_chain(exp)
+                
                 #Find ATM Strike
                 centerStrike = curPrice
                 calls = opt.calls.iloc[(opt.calls["strike"] - centerStrike).abs().argsort()[:2]]
                 puts = opt.puts.iloc[(opt.puts["strike"] - centerStrike).abs().argsort()[:2]]
                 
-                meanIV = pd.concat([calls["impliedVolatility"], puts["impliedVolatility"]]).mean()
-                if np.isnan(meanIV) or meanIV == 0: continue
+                #At night, IV can be 0.0 or NaN; if so, skip this expiration rather than breaking the whole model
+                valid_ivs = pd.concat([calls["impliedVolatility"], puts["impliedVolatility"]])
+                valid_ivs = valid_ivs[valid_ivs > 0.001] #Filter 0 or ~0
+                
+                if valid_ivs.empty: continue
+                meanIV = valid_ivs.mean()
 
-                tYears = expDays / 365.0
+                #Even if daysDiff is 0 or 1, we force tYears to be at least 1/365; this prevents the square root of time from becoming 0 and collapsing the graph
+                effective_days = max(daysDiff, 1.0)
+                tYears = effective_days / 365.0
+                
                 expPrices = []
                 for q in quantiles:
                     z = norm.ppf(q)
@@ -200,7 +217,8 @@ class Charts:
                     projection = curPrice * np.exp(-0.5 * meanIV**2 * tYears + meanIV * np.sqrt(tYears) * z)
                     expPrices.append(projection)
                 
-                anchorsX.append(expDays)
+                #Use the actual daysDiff for plotting the X-axis anchor even if we used a floor for the math
+                anchorsX.append(max(daysDiff, 1)) #visual anchor minimum 1 day out
                 anchorsY.append(expPrices)
             except Exception:
                 continue
@@ -226,7 +244,7 @@ class Charts:
             for h, weight in histories.items():
                 start_date = lastDate - timedelta(days=h)
                 data = history[history.index > start_date].reset_index()[["Date", "Close"]]
-                if len(data) < 20: continue # Skip if insufficient data
+                if len(data) < 20: continue
 
                 data.columns = ["ds", "y"]
                 data["ds"] = data["ds"].dt.tz_localize(None)

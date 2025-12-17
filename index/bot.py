@@ -25,9 +25,11 @@ bot = commands.Bot(intents=intents, command_prefix="!")
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
 """TODO:
+- CLEAN UP THIS CODE
 - Stock news from yahoo finance
 - Make a points system
 - Implement the AI
+- Make line graph for chart history
 - Implement the help system
 - Telemetry data (get github version, and save options data [preferably use data with a date range])
 - Compare command
@@ -35,7 +37,7 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 - Release version with github
 - BACKTEST DATA
 - Feedback needs to actually work
-- Caching system
+- Caching system (half done, needs to be updated daily/weekly (dynamic))
 """
 
 charts = functions.Charts()
