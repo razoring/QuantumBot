@@ -405,7 +405,7 @@ class Charts:
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._save_buffer(fig)
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
