@@ -19,7 +19,7 @@ from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import themes
 
-# Setup
+#Setup
 matplotlib.use("Agg")
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled = True
@@ -48,14 +48,13 @@ class Stamp:
         legend = Image.open("index/assets/legend.png").convert("RGBA")
         chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
         
-        # Blur effect for aesthetic
-        blur = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.BoxBlur(10))
+        blur = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.GaussianBlur(8))
         blurred = self._rounded(blur, 24)
 
         img = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
         serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
 
-        # Compositing
+        #Compositing
         img.paste(chartImg, (50, 250), mask=chartImg)
         img.paste(blurred, (68, 269), mask=blurred)
         img.paste(serverIcon, (1045, 76), serverIcon)
@@ -128,12 +127,11 @@ class yFinanceWrapper:
     def getBeta(self): return self._info.get("beta", 0)
 
     def getAnnualYield(self):
-        # Fix: Yahoo often puts the percentage in 'dividendYield' (0.05) 
-        # and the dollar amount in 'trailingAnnualDividendRate' (1.50)
+        #Yahoo often puts the percentage in 'dividendYield' (0.05) and the dollar amount in 'trailingAnnualDividendRate' (1.50)
         if "dividendYield" in self._info and self._info["dividendYield"] is not None:
             return round(self._info["dividendYield"] * 100, 2)
         
-        # Fallback calculation
+        #Fallback
         rate = self._info.get("trailingAnnualDividendRate")
         price = self.getCurrentPrice()
         if rate and price:
@@ -169,8 +167,7 @@ class Charts:
     def __init__(self):
         pass
 
-    # --- Internal Logic Methods ---
-
+    #Prediction methods
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
         anchorsX = [0]
@@ -187,7 +184,7 @@ class Charts:
                 if expDays > forward + 15: break
                 
                 opt = stock.option_chain(exp)
-                # Find ATM Strike
+                #Find ATM Strike
                 centerStrike = curPrice
                 calls = opt.calls.iloc[(opt.calls["strike"] - centerStrike).abs().argsort()[:2]]
                 puts = opt.puts.iloc[(opt.puts["strike"] - centerStrike).abs().argsort()[:2]]
@@ -199,7 +196,7 @@ class Charts:
                 expPrices = []
                 for q in quantiles:
                     z = norm.ppf(q)
-                    # Geometric Brownian Motion
+                    #Geometric Brownian Motion
                     projection = curPrice * np.exp(-0.5 * meanIV**2 * tYears + meanIV * np.sqrt(tYears) * z)
                     expPrices.append(projection)
                 
@@ -249,8 +246,7 @@ class Charts:
                 
         return prophetTrend, prophetSigma
 
-    # --- Plotting Helper Methods ---
-
+    #Plotting encapsulation
     def _setup_figure(self):
         plt.rc("font", size=10)
         fig, ax = plt.subplots(figsize=(20, 10), dpi=120)
@@ -259,19 +255,19 @@ class Charts:
         return fig, ax
 
     def _format_axes(self, ax, dates, minY, maxY, lastPrice=None):
-        # X Axis
+        #X Axis: dates
         ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=51,maxticks=51))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
         ax.tick_params(axis="x", rotation=90, colors=themes.grayDark)
         
-        # Y Axis Auto-Scale Logic
+        #Y Axis: autoscale prices
         yRange = maxY - minY
         if yRange == 0: yRange = 1
         rawStep = yRange / 20
         allowedSteps = [0.01, 0.05, 0.10, 0.25, 0.50, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0]
         step = min(allowedSteps, key=lambda x: abs(x - rawStep))
         
-        # Center ticks around last price if available, otherwise standard
+        #Centering ticks logic with fallback
         if lastPrice:
             ticksUp = np.arange(lastPrice, maxY * 1.05, step)
             ticksDown = np.arange(lastPrice - step, minY * 0.95, -step)
@@ -285,7 +281,7 @@ class Charts:
         ax.yaxis.set_label_position("right")
         ax.tick_params(axis="y", colors=themes.grayDark)
         
-        # Styling
+        #Styling
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.spines["right"].set_color(themes.grayDark)
@@ -319,13 +315,12 @@ class Charts:
         buf.seek(0)
         return buf
 
-    # --- Main Chart Functions ---
-
+    #Chart history
     def history(self, ticker, duration, serverName, serverInvite, serverIcon):
         """Generates a candlestick chart for the given ticker and duration."""
         stock = yf.Ticker(ticker)
-        # Fetch data based on duration (valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max)
-        # Adjust interval based on duration for readability
+        
+        #Adjust interval based on duration
         interval = "1d"
         if duration in ["1d", "5d"]: interval = "15m"
         elif duration in ["1mo", "3mo"]: interval = "1d"
@@ -337,91 +332,101 @@ class Charts:
 
         fig, ax = self._setup_figure()
         
-        # Data preparation for Candlesticks
-        # Colors: Brand for Up, Gray/Muted for Down to fit theme
+        #Map dates to integers 0, 1, 2... to remove weekend/overnight gaps
+        history = history.copy()
+        history["x_index"] = np.arange(len(history))
+        
+        #Split Data
         up = history[history.Close >= history.Open]
         down = history[history.Close < history.Open]
         
-        width = .6
-        width2 = .1
-        
-        # Convert index to numbers for plotting bar widths correctly
-        # Note: For intraday (15m), date2num works but auto-formatter needs care. 
-        # Using simple range/list for bar positioning if needed, but dates preferred for axis.
-        
-        # Plot Up Candles
-        ax.bar(up.index, up.Close - up.Open, bottom=up.Open, width=width, color=themes.brand, zorder=10)
-        ax.bar(up.index, up.High - up.Close, bottom=up.Close, width=width2, color=themes.brand, zorder=10)
-        ax.bar(up.index, up.Low - up.Open, bottom=up.Open, width=width2, color=themes.brand, zorder=10)
-        
-        # Plot Down Candles (Using Gray/Red variant or hollow brand?)
-        # Using a complementary color to the brand or just white/gray for down
-        downColor = themes.brandInvert
-        ax.bar(down.index, down.Close - down.Open, bottom=down.Open, width=width, color=downColor, zorder=10)
-        ax.bar(down.index, down.High - down.Open, bottom=down.Open, width=width2, color=downColor, zorder=10)
-        ax.bar(down.index, down.Low - down.Close, bottom=down.Close, width=width2, color=downColor, zorder=10)
+        #Width is relative to the integer step (1.0), so 0.6 is perfectly spaced
+        width = 0.6
+        width2 = 0.08 
 
-        # Calculate Min/Max for Axis
+        #Plot Up Candles
+        ax.bar(up["x_index"], up.Close - up.Open, bottom=up.Open, width=width, color=themes.brand, zorder=10)
+        ax.bar(up["x_index"], up.High - up.Close, bottom=up.Close, width=width2, color=themes.brand, zorder=10)
+        ax.bar(up["x_index"], up.Low - up.Open, bottom=up.Open, width=width2, color=themes.brand, zorder=10)
+        
+        #Plot Down Candles
+        downColor = themes.brandInvert
+        ax.bar(down["x_index"], down.Close - down.Open, bottom=down.Open, width=width, color=downColor, zorder=10)
+        ax.bar(down["x_index"], down.High - down.Open, bottom=down.Open, width=width2, color=downColor, zorder=10)
+        ax.bar(down["x_index"], down.Low - down.Close, bottom=down.Close, width=width2, color=downColor, zorder=10)
+
+        #Calculate min/max for axis
         minY = history["Low"].min()
         maxY = history["High"].max()
         lastPrice = history["Close"].iloc[-1]
 
-        # Formatting
-        self._format_axes(ax, history.index, minY, maxY, lastPrice)
+        #Map the integers back to readable Date/Time strings
+        def format_date(x, pos=None):
+            idx = int(x)
+            if 0 <= idx < len(history):
+                date_val = history.index[idx]
+                #If intraday (1d/5d), show time, if longer, show date
+                if duration in ["1d", "5d"]:
+                    return date_val.strftime("%H:%M") if duration == "1d" else date_val.strftime("%b %d\n%H:%M")
+                else:
+                    return date_val.strftime("%b %d")
+            return ""
+
+        from matplotlib.ticker import MaxNLocator, FuncFormatter
+        ax.xaxis.set_major_formatter(FuncFormatter(format_date))
+        ax.xaxis.set_major_locator(MaxNLocator(nbins=10)) #Limit to 10 labels to prevent crowding
+        self._format_axes(ax, history["x_index"].values, minY, maxY, lastPrice)
         
-        # Annotation for Last Price
+        #Lastest price annotation; like the prediction final price annotation
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
                     xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
                     color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
 
-        plt.title(f"{str.upper(ticker)} History ({duration})", 
+        plt.title(f"{str.upper(ticker)} History ({str.upper(duration)})", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._save_buffer(fig)
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, False)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        # Fetch ample history for Prophet if needed, otherwise short history
         history = stock.history(period="1mo") if model == 0 else stock.history(period="5y")
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
-        # Data Slicing for plotting context
+        #Data Slicing for plotting context
         plotHistory = history[history.index > lastDate - timedelta(days=14)] if model != 0 else history
-        
         quantiles = np.linspace(0.05, 0.95, 11)
         futureDays = np.arange(0, forward + 1)
         
-        # --- Model Calculations ---
         points = []
         prophetTrend, prophetSigma = self._prophetInit(model, history, lastDate, curPrice, forward)
 
-        if model != 1: # Calculate IV if not purely Prophet
+        if model != 1: #Calculate IV if not purely Prophet
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
             
-        if model == 1: # Prophet Only
+        if model == 1: #Prophet Only
             if prophetTrend is None: raise ValueError("Prophet generation failed")
             points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
             
-        elif model == 2 and len(points) > 0 and prophetTrend is not None: # Aggregate
+        elif model == 2 and len(points) > 0 and prophetTrend is not None: #Aggregate
             spread = points - curPrice
             points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
 
-        if len(points) == 0: return None # Fail safely if no data generated
+        if len(points) == 0: return None #Return None to redo model using Prophet only
 
-        # --- Plotting ---
-        points = np.maximum(points, 0.01) # Floor at 0.01
+        #Plotting
+        points = np.maximum(points, 0.01)
         futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
         
         fig, ax = self._setup_figure()
         
-        # Draw Line & Gradient
+        #Draw Line + Gradient
         ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
         
         minY = min(plotHistory["Close"].min(), np.min(points))
@@ -429,16 +434,16 @@ class Charts:
         
         self._draw_gradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
-        # Draw Fan
+        #Draw Fan
         mid = len(quantiles) // 2
         for i in range(mid):
             ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
 
-        # Draw Median Line
+        #Draw Median Line
         median = points[mid]
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model == 1 else "solid"))
 
-        # Format & Save
+        #Format & Save
         allDates = list(plotHistory.index) + futureDates
         self._format_axes(ax, allDates, minY, maxY, median[-1])
         
