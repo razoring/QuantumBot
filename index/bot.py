@@ -1,13 +1,17 @@
+import io
 import os
 import typing
 from dotenv import load_dotenv
-from discord_webhook import DiscordWebhook
+from discord_webhook import DiscordWebhook, DiscordEmbed
 from urllib.parse import urlparse as url
 
+import datetime
 
 import discord
 from discord.ext import commands
 from discord import app_commands
+
+from github import Auth, Github
 
 import functions
 from themes import brand, bgDark
@@ -15,6 +19,7 @@ from themes import brand, bgDark
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK = os.getenv("FEEDBACK_WEBHOOK")
+GIT_TOKEN = os.getenv("GIT_TOKEN")
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -42,61 +47,7 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 
 charts = functions.Charts()
 humanizer = functions.Humanizer()
-
-class Update(discord.ui.View):
-    def __init__(self, ticker, static, info):
-        super().__init__(timeout=None)
-        self.ticker = ticker
-        self.static = static
-        self.info = info
-    
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        #info = functions.yFinanceWrapper(ticker=self.ticker)
-        await interaction.message.edit(embed=infoEmbed(info=self.info, ticker=self.ticker, static=self.static), view=self)
-
-class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker):
-        super().__init__(timeout=None)
-        # store for use in callbacks
-        self.alertPrice = alertPrice
-        self.alertTicker = alertTicker
-
-    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
-    async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.alertTicker}. (ID: )```", ephemeral=True)
-
-    @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
-    async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        hook = DiscordWebhook(url=WEBHOOK, content="test")
-        response = hook.execute()
-        if response:
-            await interaction.followup.send("```Thank you for your feedback! We will review the model soon.```", ephemeral=True)
-        else:
-            await interaction.followup.send("```Sorry your request could not be processed at this time.```", ephemeral=True)
-        # remove both feedback buttons (Like and Dislike), keep Alert button
-        for child in list(self.children):
-            if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton"):
-                self.remove_item(child)
-        # edit the original message to update the view
-        await interaction.message.edit(view=self)
-
-    @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
-    async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        hook = DiscordWebhook(url=WEBHOOK, content="test")
-        response = hook.execute()
-        if response:
-            await interaction.followup.send("```Thank you for the feedback! We will try to adjust the model soon.```", ephemeral=True)
-        else:
-            await interaction.followup.send("```Sorry your request could not be processed at this time.```", ephemeral=True)
-        # remove both feedback buttons (Like and Dislike), keep Alert button
-        for child in list(self.children):
-            if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton"):
-                self.remove_item(child)
-        await interaction.message.edit(view=self)
+git = Github(auth=Auth.Token(GIT_TOKEN))
 
 def infoEmbed(info:any, ticker:str, static:dict):
     embed = discord.Embed(color=discord.Colour.teal(), title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))}%)")
@@ -115,14 +66,73 @@ def infoEmbed(info:any, ticker:str, static:dict):
     embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
     return embed
 
+def getVersion():
+    RELEASE = 1
+
+    user = git.get_user()
+    commits = user.get_repo("RICH").get_commits().totalCount
+    return RELEASE+commits/1000
+
+class Update(discord.ui.View):
+    def __init__(self, ticker, static, info):
+        super().__init__(timeout=None)
+        self.ticker = ticker
+        self.static = static
+        self.info = info
+    
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        #info = functions.yFinanceWrapper(ticker=self.ticker)
+        await interaction.message.edit(embed=infoEmbed(info=self.info, ticker=self.ticker, static=self.static), view=self)
+
+class Feedback(discord.ui.View):
+    def __init__(self, alertPrice, alertTicker, model, fileObject):
+        super().__init__(timeout=None)
+        # store for use in callbacks
+        self.alertPrice = alertPrice
+        self.ticker = alertTicker
+        self.model = model
+        self.file = fileObject
+
+    async def feedback(self, rating):
+        self.file.seek(0)
+        hook = DiscordWebhook(url=WEBHOOK, content=f"Rating: **{rating}**, Version: {getVersion()}, Ticker: {self.ticker}, Model: {self.model}, Timestamp: {datetime.datetime.now()}") 
+        hook.add_file(file=self.file, filename="output.png")
+        response = hook.execute()
+        # remove both feedback buttons (Like and Dislike), keep Alert button
+        for child in list(self.children):
+            if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton"):
+                self.remove_item(child)
+
+    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
+    async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}. (ID: )```", ephemeral=True)
+
+    @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
+    async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self.feedback("Realistic")
+        # edit the original message to update the view
+        await interaction.message.edit(view=self)
+
+    @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
+    async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self.feedback("Unrealistic")
+        await interaction.message.edit(view=self)
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/predict"))
 
-@bot.tree.command(name="help", description="Prints debug information.")
+@bot.tree.command(name="help", description="List all commands, and additional information")
 async def help(interaction: discord.Interaction):
-    await interaction.response.send_message(f"Responsive Investment Calculation Heuristic (R.I.C.H.)")
+    await interaction.response.defer()
+    embed = discord.Embed(color=discord.Colour.teal(),title=f"Quantum (v{getVersion()})")
+    embed.description = f"*When using prediction algorithm, Implied Volatility is the most reliable because it's using real options/puts data. Using an Extrapolation model only knows past data and predicts based on that, however, it is unaware of events happening etc. Using the Aggregate model combines and averages both to hopefully return a more realistic outcome that has both foresight and hindsight, however, if a company is too small, there will not be enough data for the model to base its predictions off options contracts, therefore it defaults back to the Extrapolation model."
+    await interaction.followup.send(embed=embed)
 
 @bot.tree.command(name="quote", description="Provide latest quote of a given ticker only")
 @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
@@ -226,7 +236,6 @@ async def alerts(interaction: discord.Interaction, ticker: typing.Optional[app_c
     app_commands.Choice(name=models[3], value="3")])
 async def predict(interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
     await interaction.response.defer()
-    feedback = Feedback(90, ticker)
 
     embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
     embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
@@ -245,12 +254,14 @@ async def predict(interaction: discord.Interaction, ticker: str, model: typing.O
         warning = True
         img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
     if img:
+        imgObj = io.BytesIO(img.getvalue()) 
+        feedback = Feedback(90, ticker, model, imgObj)
         file = discord.File(img, filename="output.png")
         embed.set_image(url="attachment://output.png")
         if warning == True:
             embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
         await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if warning == False else 1)]} Model) {interaction.user.mention}:",file=file, embed=embed, view=feedback)
     else:
-        await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=feedback)
+        await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
 
 bot.run(TOKEN)

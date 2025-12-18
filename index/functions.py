@@ -47,18 +47,17 @@ class Stamp:
         main = Image.open("index/assets/main.png").convert("RGBA")
         legend = Image.open("index/assets/legend.png").convert("RGBA")
         chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
-        
-        blur = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.GaussianBlur(8))
-        blurred = self._rounded(blur, 24)
 
         img = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
         serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
 
         #Compositing
         img.paste(chartImg, (50, 250), mask=chartImg)
-        img.paste(blurred, (68, 269), mask=blurred)
         img.paste(serverIcon, (1045, 76), serverIcon)
         if displayLegend:
+            blur = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.GaussianBlur(8))
+            blurred = self._rounded(blur, 24)
+            img.paste(blurred, (68, 269), mask=blurred)
             img.paste(legend, (24, 224), legend)
         img.paste(main, (0, 0), main)
 
@@ -335,7 +334,6 @@ class Charts:
 
     #Chart history
     def history(self, ticker, duration, serverName, serverInvite, serverIcon):
-        """Generates a candlestick chart for the given ticker and duration."""
         stock = yf.Ticker(ticker)
         
         #Adjust interval based on duration
@@ -401,7 +399,7 @@ class Charts:
                     xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
                     color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
 
-        plt.title(f"{str.upper(ticker)} History ({str.upper(duration)})", 
+        plt.title(f"{str.upper(ticker)} History ({duration})", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._save_buffer(fig)
@@ -459,7 +457,7 @@ class Charts:
 
         #Draw Median Line
         median = points[mid]
-        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model == 1 else "solid"))
+        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
 
         #Format & Save
         allDates = list(plotHistory.index) + futureDates

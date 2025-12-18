@@ -6,3 +6,4 @@ scipy
 prophet
 discord-webhook
 pyfonts
+github
