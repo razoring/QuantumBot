@@ -35,13 +35,9 @@ models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Log
 - Make a points system
 - Implement the AI
 - Make line graph for chart history
-- Implement the help system
-- Telemetry data (get github version, and save options data [preferably use data with a date range])
 - Compare command
 - Alert command
-- Release version with github
 - BACKTEST DATA
-- Feedback needs to actually work
 - Caching system (half done, needs to be updated daily/weekly (dynamic))
 """
 
