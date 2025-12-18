@@ -18,6 +18,7 @@ from prophet import Prophet as ph
 from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import themes
+import requests
 
 #Setup
 matplotlib.use("Agg")
@@ -49,7 +50,28 @@ class Stamp:
         chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
 
         img = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
-        serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
+        # serverIcon may be a URL (string), a local path, or a file-like object.
+        try:
+            if isinstance(self.serverIcon, str) and self.serverIcon.startswith("http"):
+                resp = requests.get(self.serverIcon, timeout=5)
+                resp.raise_for_status()
+                serverIcon = Image.open(io.BytesIO(resp.content)).convert("RGBA").resize((93, 93))
+            elif hasattr(self.serverIcon, "read"):
+                # file-like object (BytesIO etc.)
+                try:
+                    self.serverIcon.seek(0)
+                except Exception:
+                    pass
+                serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
+            else:
+                serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
+        except Exception:
+            # fallback to bundled placeholder icon
+            try:
+                serverIcon = Image.open("index/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
+            except Exception:
+                # last-resort: create a blank icon
+                serverIcon = Image.new("RGBA", (93, 93), (112, 128, 144, 255))
 
         #Compositing
         img.paste(chartImg, (50, 250), mask=chartImg)
