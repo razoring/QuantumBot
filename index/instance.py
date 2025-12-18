@@ -20,9 +20,9 @@ class QuantumBot(commands.Bot):
         # 1. Load the extension and catch errors
         try:
             await self.load_extension("cogs.robot")
-            print("✅ Extension 'cogs.robot' loaded successfully.")
+            print("Extension 'cogs.robot' loaded successfully.")
         except Exception as e:
-            print(f"❌ Failed to load extension 'cogs.robot': {e}")
+            print(f"Failed to load extension 'cogs.robot': {e}")
 
         # 2. Global Sync (Note: This takes up to 1 hour to update on Discord)
         # We use the !sync command below for instant updates during dev
