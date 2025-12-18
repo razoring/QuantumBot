@@ -48,13 +48,13 @@ async def reload(ctx):
             bot.tree.copy_global_to(guild=ctx.guild)
             await bot.tree.sync(guild=ctx.guild)
         
-        await status_msg.edit(content="Reloaded & Synced (Local Guild)")
+        await status_msg.edit(content="Reloaded & Synced (Local Guild) [Use !sync to sync globally]")
         
     except Exception as e:
         print(f"Reload Error: {e}")
         await status_msg.edit(content=f"ERROR: ```{e}```")
 
-@bot.command(name="globalsync", hidden=True)
+@bot.command(name="sync", hidden=True)
 @commands.is_owner()
 async def globalsync(ctx):
     msg = await ctx.send("Syncing Globally... (This may take up to 1hr to appear)")

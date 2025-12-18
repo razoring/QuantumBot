@@ -426,7 +426,7 @@ class Charts:
         from matplotlib.ticker import FuncFormatter, MaxNLocator
         def vol_format(x, pos): return Humanizer.suffix(x)
         ax2.yaxis.set_major_formatter(FuncFormatter(vol_format))
-        ax2.yaxis.set_major_locator(MaxNLocator(nbins=15))
+        ax2.yaxis.set_major_locator(MaxNLocator(nbins=50))
 
         # --- Plot Price (ax1) - Top Layer ---
         ax1.set_zorder(10)
@@ -480,7 +480,7 @@ class Charts:
                     xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
                     color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
 
-        plt.title(f"{str.upper(ticker)} History ({str.upper(duration)})", 
+        plt.title(f"{str.upper(ticker)} History ({duration})", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._save_buffer(fig)
