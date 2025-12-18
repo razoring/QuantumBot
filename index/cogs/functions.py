@@ -470,6 +470,10 @@ class Charts:
         self._format_axes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
         ax1.set_xlim(-0.5, len(history) - 0.5)
 
+        #ax1.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
+        ax1.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
+        #ax1.set_axisbelow(True) 
+
         #Annotation
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
