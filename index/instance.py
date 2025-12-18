@@ -41,7 +41,7 @@ bot = QuantumBot()
 async def sync(ctx):
     try:
         synced = await bot.tree.sync()
-        await ctx.send(f"Synced {len(synced)} commands globally.")
+        await ctx.send(f"```Synced {len(synced)} commands globally.```")
     except Exception as e:
         await ctx.send(f"```ERROR: {e}```")
 
@@ -53,9 +53,9 @@ async def reload(ctx):
         await bot.reload_extension("cogs.robot")
         # Re-sync after reload to apply changes
         await bot.tree.sync() 
-        await ctx.send("'''Module Reloaded & Synced'''")
+        await ctx.send("```Module Reloaded & Synced```")
     except Exception as e:
-        await ctx.send(f"'''ERROR: {e}'''")
+        await ctx.send(f"```ERROR: {e}```")
 
 if __name__ == "__main__":
     bot.run(TOKEN)
