@@ -1,5 +1,6 @@
 # --- START OF FILE instance.py ---
 import os
+import sys # <--- REQUIRED for reloading modules
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -17,45 +18,48 @@ class QuantumBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        # 1. Load the extension and catch errors
         try:
             await self.load_extension("cogs.robot")
-            print("Extension 'cogs.robot' loaded successfully.")
+            print("Extension 'cogs.robot' loaded.")
         except Exception as e:
-            print(f"Failed to load extension 'cogs.robot': {e}")
-
-        # 2. Global Sync (Note: This takes up to 1 hour to update on Discord)
-        # We use the !sync command below for instant updates during dev
-        # await self.tree.sync() 
-
+            print(f"ERROR: {e}")
+            
     async def on_ready(self):
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/predict"))
         print(f"Logged in as {self.user} (ID: {self.user.id})")
 
 bot = QuantumBot()
 
-# --- INSTANT SYNC COMMAND ---
-# Run "!sync" in your discord server to force the commands to appear immediately
-@bot.command(name="sync")
-@commands.is_owner()
-async def sync(ctx):
-    try:
-        synced = await bot.tree.sync()
-        await ctx.send(f"```Synced {len(synced)} commands globally.```")
-    except Exception as e:
-        await ctx.send(f"```ERROR: {e}```")
-
 @bot.command(name="reload", hidden=True)
 @commands.is_owner()
 async def reload(ctx):
-    print("Reload Initiating...")
+    status_msg = await ctx.send("Reloading...")
+    
     try:
-        await bot.reload_extension("cogs.robot")
-        # Re-sync after reload to apply changes
-        await bot.tree.sync() 
-        await ctx.send("```Module Reloaded & Synced```")
+        await bot.unload_extension("cogs.robot")
+        nuked = ["cogs.functions", "themes"]
+        
+        for module in nuked:
+            if module in sys.modules:
+                del sys.modules[module]
+        await bot.load_extension("cogs.robot")
+        
+        if ctx.guild:
+            bot.tree.copy_global_to(guild=ctx.guild)
+            await bot.tree.sync(guild=ctx.guild)
+        
+        await status_msg.edit(content="Reloaded & Synced (Local Guild)")
+        
     except Exception as e:
-        await ctx.send(f"```ERROR: {e}```")
+        print(f"Reload Error: {e}")
+        await status_msg.edit(content=f"ERROR: ```{e}```")
+
+@bot.command(name="globalsync", hidden=True)
+@commands.is_owner()
+async def globalsync(ctx):
+    msg = await ctx.send("Syncing Globally... (This may take up to 1hr to appear)")
+    await bot.tree.sync()
+    await msg.edit(content="Global Sync Complete.")
 
 if __name__ == "__main__":
     bot.run(TOKEN)

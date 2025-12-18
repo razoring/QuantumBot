@@ -280,7 +280,7 @@ class Charts:
                 fcst = m.predict(future)
                 
                 trend = fcst.tail(forward + 1)["yhat"].values
-                # Offset to align with current price
+                #Offset to align with current price
                 prophetSum.append((trend + curPrice - trend[0]) * weight)
             
             if prophetSum:
@@ -289,27 +289,36 @@ class Charts:
         return prophetTrend, prophetSigma
 
     #Plotting encapsulation
+    #Reverted to single axis return, as we are now doing an overlay
     def _setup_figure(self):
         plt.rc("font", size=10)
-        fig, ax = plt.subplots(figsize=(20, 10), dpi=120)
+        fig, ax = plt.subplots(figsize=(20, 10), dpi=100)
         fig.patch.set_facecolor(color=themes.bgDark)
         ax.set_facecolor(themes.bgDark)
         return fig, ax
-
-    def _format_axes(self, ax, dates, minY, maxY, lastPrice=None):
+    def _format_axes(self, ax, dates, minY, maxY, lastPrice=None, formatX=True):
         #X Axis: dates
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=51,maxticks=51))
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-        ax.tick_params(axis="x", rotation=90, colors=themes.grayDark)
+        if formatX:
+            #Dynamic Date Formatting based on span
+            span = dates[-1] - dates[0]
+            if span.days > 730: # > 2 Years
+                fmt = "%Y"
+            elif dates[-1].year != dates[0].year: #Spans across a new year
+                fmt = "%b %Y"
+            else:
+                fmt = "%b %d"
+            
+            ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=10, maxticks=15))
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
+            ax.tick_params(axis="x", rotation=45, colors=themes.grayDark, labelcolor=themes.grayDark)
         
-        #Y Axis: autoscale prices
+        #Price Auto-Scale
         yRange = maxY - minY
         if yRange == 0: yRange = 1
         rawStep = yRange / 20
         allowedSteps = [0.01, 0.05, 0.10, 0.25, 0.50, 1.0, 2.5, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0]
         step = min(allowedSteps, key=lambda x: abs(x - rawStep))
         
-        #Centering ticks logic with fallback
         if lastPrice:
             ticksUp = np.arange(lastPrice, maxY * 1.05, step)
             ticksDown = np.arange(lastPrice - step, minY * 0.95, -step)
@@ -319,20 +328,26 @@ class Charts:
 
         ax.set_yticks(customTicks)
         ax.yaxis.set_major_formatter(FormatStrFormatter("$%.2f"))
+        
+        #FORCE PRICE TO RIGHT
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
-        ax.tick_params(axis="y", colors=themes.grayDark)
+        ax.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark)
         
         #Styling
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.spines["right"].set_color(themes.grayDark)
         ax.spines["bottom"].set_color(themes.grayDark)
-        ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
-        ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
         
-        plt.ylim(minY * 0.98, maxY * 1.02)
-        plt.xlim(dates[0], dates[-1])
+        #Grid
+        ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
+        if formatX:
+            ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
+        
+        ax.set_ylim(minY * 0.98, maxY * 1.02)
+        if formatX:
+            ax.set_xlim(dates[0], dates[-1])
 
     def _draw_gradient(self, ax, xNums, yVals, minY, color):
         yFloor = minY * 0.90
@@ -361,70 +376,107 @@ class Charts:
     def history(self, ticker, duration, serverName, serverInvite, serverIcon):
         stock = yf.Ticker(ticker)
         
-        #Adjust interval based on duration
         interval = "1d"
-        if duration in ["1d", "5d"]: interval = "15m"
-        elif duration in ["1mo", "3mo"]: interval = "1d"
-        elif duration in ["6mo", "1y", "2y"]: interval = "1d"
-        else: interval = "1wk"
+        if duration in ["1d"]: interval = "2m"
+        elif duration in ["5d"]: interval = "15m"
+        elif duration in ["1mo"]: interval = "1d"
+        elif duration in ["3mo", "6mo"]: interval = "1wk"
+        elif duration in ["1y", "2y"]: interval = "1mo"
+        else: interval = "3mo"
 
         history = stock.history(period=duration, interval=interval)
         if history.empty: return None
 
-        fig, ax = self._setup_figure()
+        # Timezone Fix
+        if history.index.tz is None:
+            history.index = history.index.tz_localize("UTC")
+        history.index = history.index.tz_convert("America/New_York")
+
+        # Setup Main Axis (Price)
+        fig, ax1 = self._setup_figure()
         
-        #Map dates to integers 0, 1, 2... to remove weekend/overnight gaps
+        # Create Twin Axis (Volume) sharing X
+        ax2 = ax1.twinx()
+
+        # Integer Indexing
         history = history.copy()
         history["x_index"] = np.arange(len(history))
         
-        #Split Data
         up = history[history.Close >= history.Open]
         down = history[history.Close < history.Open]
-        
-        #Width is relative to the integer step (1.0), so 0.6 is perfectly spaced
         width = 0.6
         width2 = 0.08 
 
-        #Plot Up Candles
-        ax.bar(up["x_index"], up.Close - up.Open, bottom=up.Open, width=width, color=themes.brand, zorder=10)
-        ax.bar(up["x_index"], up.High - up.Close, bottom=up.Close, width=width2, color=themes.brand, zorder=10)
-        ax.bar(up["x_index"], up.Low - up.Open, bottom=up.Open, width=width2, color=themes.brand, zorder=10)
+        # --- Plot Volume (ax2) - Bottom Layer ---
+        maxVol = history.Volume.max()
+        ax2.set_ylim(0, maxVol * 4) 
         
-        #Plot Down Candles
-        downColor = themes.brandInvert
-        ax.bar(down["x_index"], down.Close - down.Open, bottom=down.Open, width=width, color=downColor, zorder=10)
-        ax.bar(down["x_index"], down.High - down.Open, bottom=down.Open, width=width2, color=downColor, zorder=10)
-        ax.bar(down["x_index"], down.Low - down.Close, bottom=down.Close, width=width2, color=downColor, zorder=10)
+        vol_colors = [themes.brand if c >= o else themes.brandInvert for c, o in zip(history.Close, history.Open)]
+        ax2.bar(history["x_index"], history.Volume, width=width, color=vol_colors, alpha=0.5)
+        
+        # Configure Volume Axis (Left)
+        ax2.yaxis.tick_left()
+        ax2.yaxis.set_label_position("left")
+        ax2.spines["right"].set_visible(False)
+        ax2.spines["top"].set_visible(False)
+        ax2.spines["bottom"].set_visible(False)
+        ax2.spines["left"].set_color(themes.grayDark)
+        ax2.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark, labelsize=8)
+        
+        from matplotlib.ticker import FuncFormatter, MaxNLocator
+        def vol_format(x, pos): return Humanizer.suffix(x)
+        ax2.yaxis.set_major_formatter(FuncFormatter(vol_format))
+        ax2.yaxis.set_major_locator(MaxNLocator(nbins=15))
 
-        #Calculate min/max for axis
+        # --- Plot Price (ax1) - Top Layer ---
+        ax1.set_zorder(10)
+        ax1.patch.set_visible(False)
+
+        ax1.bar(up["x_index"], up.Close - up.Open, bottom=up.Open, width=width, color=themes.brand)
+        ax1.bar(up["x_index"], up.High - up.Close, bottom=up.Close, width=width2, color=themes.brand)
+        ax1.bar(up["x_index"], up.Low - up.Open, bottom=up.Open, width=width2, color=themes.brand)
+        
+        downColor = themes.brandInvert
+        ax1.bar(down["x_index"], down.Close - down.Open, bottom=down.Open, width=width, color=downColor)
+        ax1.bar(down["x_index"], down.High - down.Open, bottom=down.Open, width=width2, color=downColor)
+        ax1.bar(down["x_index"], down.Low - down.Close, bottom=down.Close, width=width2, color=downColor)
+
+        #Limits
         minY = history["Low"].min()
         maxY = history["High"].max()
         lastPrice = history["Close"].iloc[-1]
 
-        #Map the integers back to readable Date/Time strings
+        #X-Axis Formatter (Integer -> Date)
         def format_date(x, pos=None):
             idx = int(x)
             if 0 <= idx < len(history):
                 date_val = history.index[idx]
-                #If intraday (1d/5d), show time, if longer, show date
-                if duration in ["1d", "5d"]:
-                    return date_val.strftime("%H:%M") if duration == "1d" else date_val.strftime("%b %d\n%H:%M")
-                else:
+                if duration == "1d": 
+                    return date_val.strftime("%H:%M")
+                elif duration == "5d": 
+                    return date_val.strftime("%b %d\n%H:%M")
+                elif duration in ["1mo", "3mo", "6mo", "ytd"]:
                     return date_val.strftime("%b %d")
+                elif duration in ["1y", "2y"]:
+                    return date_val.strftime("%b %Y") #Month Year
+                else: 
+                    return date_val.strftime("%Y") #Just Year
             return ""
 
-        from matplotlib.ticker import MaxNLocator, FuncFormatter
-        ax.xaxis.set_major_formatter(FuncFormatter(format_date))
-        ax.xaxis.set_major_locator(MaxNLocator(nbins=10)) #Limit to 10 labels to prevent crowding
-        self._format_axes(ax, history["x_index"].values, minY, maxY, lastPrice)
+        ax1.xaxis.set_major_formatter(FuncFormatter(format_date))
+        ax1.xaxis.set_major_locator(MaxNLocator(nbins=10))
+        ax1.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark)
         
-        #Lastest price annotation; like the prediction final price annotation
+        self._format_axes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
+        ax1.set_xlim(-0.5, len(history) - 0.5)
+
+        #Annotation
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
-        ax.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
+        ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
                     xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
                     color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
 
-        plt.title(f"{str.upper(ticker)} History ({duration})", 
+        plt.title(f"{str.upper(ticker)} History ({str.upper(duration)})", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._save_buffer(fig)
