@@ -263,9 +263,9 @@ class Charts:
         prophetSigma = 0
         if model != 0:
             prophetSum = []
-            histories = {365: 0.5, 730: 0.15, 1095: 0.15, 1825: 0.2}
+            histories = {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.15, "M"], 1095: [0.15, "M"], 1825: [0.2, "Y"]} # days: [weight, freq]
             
-            for h, weight in histories.items():
+            for h, nested in histories.items():
                 start_date = lastDate - timedelta(days=h)
                 data = history[history.index > start_date].reset_index()[["Date", "Close"]]
                 if len(data) < 20: continue
@@ -276,12 +276,12 @@ class Charts:
                 m = ph(daily_seasonality=True, yearly_seasonality=True)
                 m.fit(data)
                 
-                future = m.make_future_dataframe(periods=forward, freq="D")
+                future = m.make_future_dataframe(periods=forward, freq=nested[0])
                 fcst = m.predict(future)
                 
                 trend = fcst.tail(forward + 1)["yhat"].values
                 #Offset to align with current price
-                prophetSum.append((trend + curPrice - trend[0]) * weight)
+                prophetSum.append((trend + curPrice - trend[0]) * nested[1])
             
             if prophetSum:
                 prophetTrend = np.sum(prophetSum, axis=0)
@@ -489,7 +489,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="1mo") if model == 0 else stock.history(period="5y")
+        history = stock.history(period="1mo") if model == 0 else stock.history(period="5y", interval="1d")
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
