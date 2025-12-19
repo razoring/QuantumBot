@@ -636,7 +636,7 @@ class Charts:
 
         #Draw Median Line
         median = points[mid]
-        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
+        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed"))
 
         #Format & Save
         allDates = list(plotHistory.index) + futureDates
