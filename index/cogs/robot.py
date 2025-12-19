@@ -247,10 +247,7 @@ class Robot(commands.Cog):
         embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
         embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
 
-        invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-        icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
-
-        img = charts.projectTest(ticker, 1, weights)
+        img = charts.projectTest(ticker, weights)
         if img:
             file = discord.File(img, filename="output.png")
             embed.set_image(url="attachment://output.png")
