@@ -19,6 +19,7 @@ from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import themes
 import requests
+import ast
 
 #Setup
 matplotlib.use("Agg")
@@ -258,12 +259,13 @@ class Charts:
             points.append(cs(futureDays))
         return np.array(points)
     
-    def _prophetInit(self, model, history, lastDate, curPrice, forward):
+    def _prophetInit(self, model, history, lastDate, curPrice):
+        forward = 90
         prophetTrend = None
         prophetSigma = 0
         if model != 0:
             prophetSum = []
-            histories = {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.15, "M"], 1095: [0.15, "M"], 1825: [0.2, "Y"]} # days: [weight, freq]
+            histories = {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
             
             for h, nested in histories.items():
                 start_date = lastDate - timedelta(days=h)
@@ -273,18 +275,57 @@ class Charts:
                 data.columns = ["ds", "y"]
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                m = ph(daily_seasonality=True, yearly_seasonality=True)
+                m = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
                 m.fit(data)
                 
-                future = m.make_future_dataframe(periods=forward, freq=nested[0])
+                future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
                 fcst = m.predict(future)
                 
                 trend = fcst.tail(forward + 1)["yhat"].values
                 #Offset to align with current price
-                prophetSum.append((trend + curPrice - trend[0]) * nested[1])
+                prophetSum.append((trend + curPrice - trend[0]) * nested[0])
             
             if prophetSum:
                 prophetTrend = np.sum(prophetSum, axis=0)
+                
+        return prophetTrend, prophetSigma
+    
+    def _prophetTest(self, history, lastDate, curPrice, histories):
+        # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
+        forward = 90
+        prophetTrend = None
+        prophetSigma = 0
+
+        def parse_weight_freq_map(s: str) -> dict[int, list]:
+            # Convert "D" → 'D' so literal_eval can parse it
+            fixed = s.replace('"', "'")
+            
+            # Safely evaluate into Python objects
+            return ast.literal_eval(fixed)
+
+        histories = parse_weight_freq_map(histories)
+        prophetSum = []
+            
+        for h, nested in histories.items():
+            start_date = lastDate - timedelta(days=h)
+            data = history[history.index > start_date].reset_index()[["Date", "Close"]]
+            if len(data) < 20: continue
+
+            data.columns = ["ds", "y"]
+            data["ds"] = data["ds"].dt.tz_localize(None)
+
+            m = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
+            m.fit(data)
+            
+            future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
+            fcst = m.predict(future)
+            
+            trend = fcst.tail(forward + 1)["yhat"].values
+            #Offset to align with current price
+            prophetSum.append((trend + curPrice - trend[0]) * nested[0])
+        
+        if prophetSum:
+            prophetTrend = np.sum(prophetSum, axis=0)
                 
         return prophetTrend, prophetSigma
 
@@ -485,7 +526,7 @@ class Charts:
 
         chartBuf = self._save_buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
-
+    
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
@@ -554,3 +595,60 @@ class Charts:
 
         chartBuf = self._save_buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
+    
+    def projectTest(self, ticker, weights):
+        forward = 90
+        stock = yf.Ticker(ticker)
+        history = stock.history(period="5y", interval="1d")
+        if history.empty: return None
+        
+        curPrice = history["Close"].iloc[-1]
+        lastDate = history.index[-1]
+        
+        #Data Slicing for plotting context
+        plotHistory = history[history.index > lastDate - timedelta(days=14)]
+        quantiles = np.linspace(0.05, 0.95, 11)
+        futureDays = np.arange(0, forward + 1)
+        
+        points = []
+        prophetTrend, prophetSigma = self._prophetTest(history, lastDate, curPrice, weights)
+        if prophetTrend is None: raise ValueError("Prophet generation failed")
+        points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
+
+        #Plotting
+        points = np.maximum(points, 0.01)
+        futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
+        
+        fig, ax = self._setup_figure()
+        
+        #Draw Line + Gradient
+        ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
+        
+        minY = min(plotHistory["Close"].min(), np.min(points))
+        maxY = max(plotHistory["Close"].max(), np.max(points))
+        
+        self._draw_gradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
+        
+        #Draw Fan
+        mid = len(quantiles) // 2
+        for i in range(mid):
+            ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
+
+        #Draw Median Line
+        median = points[mid]
+        ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
+
+        #Format & Save
+        allDates = list(plotHistory.index) + futureDates
+        self._format_axes(ax, allDates, minY, maxY, median[-1])
+        
+        bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
+        ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), 
+                    xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
+                    color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
+        
+        plt.title(f"{str.upper(ticker)} Prediction (90d)", 
+                  fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
+
+        chartBuf = self._save_buffer(fig)
+        return chartBuf

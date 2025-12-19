@@ -237,6 +237,29 @@ class Robot(commands.Cog):
             )
         else:
             await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
+    
+    @app_commands.command(name="predictiontest", description="Predicts future movements of a given ticker")
+    @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", weights="Prediction weights for testing")
+    @commands.is_owner()
+    async def predictTest(self, interaction: discord.Interaction, ticker: str, weights:str):
+        await interaction.response.defer()
+
+        embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
+        embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
+
+        invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+        icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
+
+        img = charts.projectTest(ticker, 1, weights)
+        if img:
+            file = discord.File(img, filename="output.png")
+            embed.set_image(url="attachment://output.png")
+            
+            await interaction.followup.send(
+                f"{interaction.user.mention}:",
+                file=file, embed=embed)
+        else:
+            await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
 
 async def setup(bot):
     await bot.add_cog(Robot(bot))
