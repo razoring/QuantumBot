@@ -596,7 +596,7 @@ class Charts:
         chartBuf = self._save_buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
     
-    def projectTest(self, ticker, weights, today): #period given in days
+    def projectTest(self, ticker, weights, today=datetime.today().strftime("%Y-%m-%d")): #period given in days
         forward = 90
         stock = yf.Ticker(ticker)
         history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
