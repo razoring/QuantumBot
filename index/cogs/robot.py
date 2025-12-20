@@ -12,7 +12,7 @@ from discord_webhook import DiscordWebhook
 from github import Auth, Github
 from dotenv import load_dotenv
 
-from . import functions
+import functions
 from themes import brand, bgDark
 
 load_dotenv()
@@ -253,7 +253,7 @@ class Robot(commands.Cog):
             embed.set_image(url="attachment://output.png")
             
             await interaction.followup.send(
-                f"{interaction.user.mention}:",
+                f"{weights}:",
                 file=file, embed=embed)
         else:
             await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")

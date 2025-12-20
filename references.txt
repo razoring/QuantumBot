@@ -1,0 +1,10 @@
+yfinance:
+Valid intervals: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+Valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max Default: 1mo
+
+FB Prophet:
+'D':Daily, 'H' Hourly, 'ME' Month End, 'MS' Month start (explicit), 'W' Weekly, 'Q' Quarterly, 'YE' Year End, 'min' Minutely, 'S' Secondly
+S = 1
+min = 60
+H = 3600
+Frequency in prophet is by the seconds

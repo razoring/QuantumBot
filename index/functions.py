@@ -542,7 +542,7 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        prophetTrend, prophetSigma = self._prophetInit(model, history, lastDate, curPrice, forward)
+        prophetTrend, prophetSigma = self._prophetInit(model, history, lastDate, curPrice)
 
         if model != 1: #Calculate IV if not purely Prophet
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
@@ -596,22 +596,22 @@ class Charts:
         chartBuf = self._save_buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
     
-    def projectTest(self, ticker, weights):
+    def projectTest(self, ticker, weights, today): #period given in days
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="5y", interval="1d")
+        history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
         #Data Slicing for plotting context
-        plotHistory = history[history.index > lastDate - timedelta(days=14)]
+        plotHistory = history[history.index > lastDate-timedelta(days=14)]
         quantiles = np.linspace(0.05, 0.95, 11)
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        prophetTrend, prophetSigma = self._prophetTest(history, lastDate, curPrice, weights)
+        prophetTrend, prophetSigma = self._prophetTest(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
 
