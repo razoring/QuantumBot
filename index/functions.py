@@ -265,7 +265,7 @@ class Charts:
         prophetSigma = 0
         if model != 0:
             prophetSum = []
-            histories = {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
+            histories = {90: [0.005, "ME"], 180: [0.01, "ME"], 365: [0.485, "D"], 730: [0.49, "W"], 1825: [0.01, "YS"]} # days: [weight, freq] #weights must be = 1
             
             for h, nested in histories.items():
                 start_date = lastDate - timedelta(days=h)
