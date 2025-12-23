@@ -35,7 +35,6 @@ def getVersion():
         return RELEASE
 
 def get_static_data(info):
-    """Helper to generate the static dictionary to avoid code repetition."""
     return {
         "getDayOpen": info.getDayOpen(),
         "getDayClose": info.getDayClose(),
@@ -133,7 +132,8 @@ class Robot(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         await interaction.response.defer()
         embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
-        embed.description = f"*When using prediction algorithm, Implied Volatility is the most reliable because it's using real options/puts data. Using an Extrapolation model only knows past data and predicts based on that, however, it is unaware of events happening etc. Using the Aggregate model combines and averages both to hopefully return a more realistic outcome that has both foresight and hindsight, however, if a company is too small, there will not be enough data for the model to base its predictions off options contracts, therefore it defaults back to the Extrapolation model."
+        txt = open("index/help.txt","r")
+        embed.description = f"""{txt.read()}"""
         await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
@@ -193,7 +193,6 @@ class Robot(commands.Cog):
         if type(ticker) is type(None) and type(price) is type(None) and type(identifier) is type(None):
             await interaction.response.send_message("```Nothing but us chickens. (See /help for help)```", ephemeral=True)
             return
-        await interaction.response.defer()
 
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")

@@ -1,0 +1,15 @@
+/predict <ticker> <model>  
+Inputs: ticker is required, model is optional
+
+/chart <ticker> <duration>  
+Inputs: ticker is required, duration is required
+
+/quote <ticker>  
+Inputs: ticker is required  
+
+/alerts <action> <ticker/identifier> <price>  
+Inputs: action is required, ticker optional, identifier optional, price optional 
+Set Alerts: /alerts action:create ticker:meta price:600  
+List Alerts (Returns an identifier): /alerts action:list
+Delete An Alerts: /alerts action:delete identifier:1204952  
+Delete All Alerts: /alerts action:clear

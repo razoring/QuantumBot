@@ -337,6 +337,7 @@ class Charts:
         fig.patch.set_facecolor(color=themes.bgDark)
         ax.set_facecolor(themes.bgDark)
         return fig, ax
+    
     def _format_axes(self, ax, dates, minY, maxY, lastPrice=None, formatX=True):
         #X Axis: dates
         if formatX:
