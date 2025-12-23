@@ -192,7 +192,6 @@ class Charts:
     def __init__(self):
         pass
 
-    #Prediction methods
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
         anchorsX = [0]
@@ -200,50 +199,40 @@ class Charts:
         options = stock.options
         if len(options) <= 1: return None
 
-        #Ensure lastDate is treated as the 'start' of calc
-        #If running at night, lastDate is likely the previous close
         start_date = lastDate.date()
 
         for exp in options:
             try:
                 expDate = datetime.strptime(exp, "%Y-%m-%d").date()
-                
-                #Calculate raw days diff (avoids delta*sqrt(t) to be 0)
                 daysDiff = (expDate - start_date).days
-                
-                #Skip past dates but allow 0 (today/tomorrow expirations) to be processed by clamping them to a minimum value below
                 if daysDiff < 0: continue
                 
-                #Stop if too far into the future
                 if daysDiff > forward + 15: break
                 
                 opt = stock.option_chain(exp)
                 
-                #Find ATM Strike
                 centerStrike = curPrice
                 calls = opt.calls.iloc[(opt.calls["strike"] - centerStrike).abs().argsort()[:2]]
                 puts = opt.puts.iloc[(opt.puts["strike"] - centerStrike).abs().argsort()[:2]]
                 
-                #At night, IV can be 0.0 or NaN; if so, skip this expiration rather than breaking the whole model
                 valid_ivs = pd.concat([calls["impliedVolatility"], puts["impliedVolatility"]])
-                valid_ivs = valid_ivs[valid_ivs > 0.001] #Filter 0 or ~0
+                valid_ivs = valid_ivs[valid_ivs > 0.001] # filter 0 or ~0
                 
                 if valid_ivs.empty: continue
                 meanIV = valid_ivs.mean()
 
-                #Even if daysDiff is 0 or 1, we force tYears to be at least 1/365; this prevents the square root of time from becoming 0 and collapsing the graph
+                # even if daysDiff is 0 or 1, we force tYears to be at least 1/365; this prevents the square root of time from becoming 0 and collapsing the graph
                 effective_days = max(daysDiff, 1.0)
                 tYears = effective_days / 365.0
                 
                 expPrices = []
                 for q in quantiles:
                     z = norm.ppf(q)
-                    #Geometric Brownian Motion
+                    # Geometric Brownian Motion
                     projection = curPrice * np.exp(-0.5 * meanIV**2 * tYears + meanIV * np.sqrt(tYears) * z)
                     expPrices.append(projection)
                 
-                #Use the actual daysDiff for plotting the X-axis anchor even if we used a floor for the math
-                anchorsX.append(max(daysDiff, 1)) #visual anchor minimum 1 day out
+                anchorsX.append(max(daysDiff, 1))
                 anchorsY.append(expPrices)
             except Exception:
                 continue
@@ -259,51 +248,13 @@ class Charts:
             points.append(cs(futureDays))
         return np.array(points)
     
-    def _prophetInit(self, model, history, lastDate, curPrice):
-        forward = 90
-        prophetTrend = None
-        prophetSigma = 0
-        if model != 0:
-            prophetSum = []
-            histories = {90: [0.005, "ME"], 180: [0.01, "ME"], 365: [0.485, "D"], 730: [0.49, "W"], 1825: [0.01, "YS"]} # days: [weight, freq] #weights must be = 1
-            
-            for h, nested in histories.items():
-                start_date = lastDate - timedelta(days=h)
-                data = history[history.index > start_date].reset_index()[["Date", "Close"]]
-                if len(data) < 20: continue
-
-                data.columns = ["ds", "y"]
-                data["ds"] = data["ds"].dt.tz_localize(None)
-
-                m = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
-                m.fit(data)
-                
-                future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
-                fcst = m.predict(future)
-                
-                trend = fcst.tail(forward + 1)["yhat"].values
-                #Offset to align with current price
-                prophetSum.append((trend + curPrice - trend[0]) * nested[0])
-            
-            if prophetSum:
-                prophetTrend = np.sum(prophetSum, axis=0)
-                
-        return prophetTrend, prophetSigma
-    
-    def _prophetTest(self, history, lastDate, curPrice, histories):
+    def _prophetInit(self, history, lastDate, curPrice, histories):
         # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
         forward = 90
         prophetTrend = None
         prophetSigma = 0
 
-        def parse_weight_freq_map(s: str) -> dict[int, list]:
-            # Convert "D" → 'D' so literal_eval can parse it
-            fixed = s.replace('"', "'")
-            
-            # Safely evaluate into Python objects
-            return ast.literal_eval(fixed)
-
-        histories = parse_weight_freq_map(histories)
+        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
             
         for h, nested in histories.items():
@@ -329,23 +280,19 @@ class Charts:
                 
         return prophetTrend, prophetSigma
 
-    #Plotting encapsulation
-    #Reverted to single axis return, as we are now doing an overlay
-    def _setup_figure(self):
+    def _setupFigure(self):
         plt.rc("font", size=10)
         fig, ax = plt.subplots(figsize=(20, 10), dpi=100)
         fig.patch.set_facecolor(color=themes.bgDark)
         ax.set_facecolor(themes.bgDark)
         return fig, ax
     
-    def _format_axes(self, ax, dates, minY, maxY, lastPrice=None, formatX=True):
-        #X Axis: dates
+    def _formatAxes(self, ax, dates, minY, maxY, lastPrice=None, formatX=True):
         if formatX:
-            #Dynamic Date Formatting based on span
             span = dates[-1] - dates[0]
-            if span.days > 730: # > 2 Years
+            if span.days > 730:
                 fmt = "%Y"
-            elif dates[-1].year != dates[0].year: #Spans across a new year
+            elif dates[-1].year != dates[0].year:
                 fmt = "%b %Y"
             else:
                 fmt = "%b %d"
@@ -354,7 +301,6 @@ class Charts:
             ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
             ax.tick_params(axis="x", rotation=45, colors=themes.grayDark, labelcolor=themes.grayDark)
         
-        #Price Auto-Scale
         yRange = maxY - minY
         if yRange == 0: yRange = 1
         rawStep = yRange / 20
@@ -371,18 +317,15 @@ class Charts:
         ax.set_yticks(customTicks)
         ax.yaxis.set_major_formatter(FormatStrFormatter("$%.2f"))
         
-        #FORCE PRICE TO RIGHT
         ax.yaxis.tick_right()
         ax.yaxis.set_label_position("right")
         ax.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark)
         
-        #Styling
         ax.spines["top"].set_visible(False)
         ax.spines["left"].set_visible(False)
         ax.spines["right"].set_color(themes.grayDark)
         ax.spines["bottom"].set_color(themes.grayDark)
         
-        #Grid
         ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
         if formatX:
             ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
@@ -391,7 +334,7 @@ class Charts:
         if formatX:
             ax.set_xlim(dates[0], dates[-1])
 
-    def _draw_gradient(self, ax, xNums, yVals, minY, color):
+    def _drawGradient(self, ax, xNums, yVals, minY, color):
         yFloor = minY * 0.90
         verts = [(xNums[0], yFloor)] + list(zip(xNums, yVals)) + [(xNums[-1], yFloor)]
         poly = Polygon(verts, transform=ax.transData, facecolor="none", edgecolor="none")
@@ -406,7 +349,7 @@ class Charts:
                        extent=[xNums[0], xNums[-1], yFloor, max(yVals)], zorder=1)
         im.set_clip_path(poly)
 
-    def _save_buffer(self, fig):
+    def _buffer(self, fig):
         plt.tight_layout()
         buf = io.BytesIO()
         plt.savefig(buf, format="png")
@@ -414,7 +357,6 @@ class Charts:
         buf.seek(0)
         return buf
 
-    #Chart history
     def history(self, ticker, duration, serverName, serverInvite, serverIcon):
         stock = yf.Ticker(ticker)
         
@@ -429,18 +371,13 @@ class Charts:
         history = stock.history(period=duration, interval=interval)
         if history.empty: return None
 
-        # Timezone Fix
         if history.index.tz is None:
             history.index = history.index.tz_localize("UTC")
         history.index = history.index.tz_convert("America/New_York")
 
-        # Setup Main Axis (Price)
-        fig, ax1 = self._setup_figure()
-        
-        # Create Twin Axis (Volume) sharing X
+        fig, ax1 = self._setupFigure()
         ax2 = ax1.twinx()
 
-        # Integer Indexing
         history = history.copy()
         history["x_index"] = np.arange(len(history))
         
@@ -449,14 +386,12 @@ class Charts:
         width = 0.6
         width2 = 0.08 
 
-        # --- Plot Volume (ax2) - Bottom Layer ---
         maxVol = history.Volume.max()
         ax2.set_ylim(0, maxVol * 4) 
         
         vol_colors = [themes.brand if c >= o else themes.brandInvert for c, o in zip(history.Close, history.Open)]
         ax2.bar(history["x_index"], history.Volume, width=width, color=vol_colors, alpha=0.5)
         
-        # Configure Volume Axis (Left)
         ax2.yaxis.tick_left()
         ax2.yaxis.set_label_position("left")
         ax2.spines["right"].set_visible(False)
@@ -470,7 +405,6 @@ class Charts:
         ax2.yaxis.set_major_formatter(FuncFormatter(vol_format))
         ax2.yaxis.set_major_locator(MaxNLocator(nbins=50))
 
-        # --- Plot Price (ax1) - Top Layer ---
         ax1.set_zorder(10)
         ax1.patch.set_visible(False)
 
@@ -483,12 +417,10 @@ class Charts:
         ax1.bar(down["x_index"], down.High - down.Open, bottom=down.Open, width=width2, color=downColor)
         ax1.bar(down["x_index"], down.Low - down.Close, bottom=down.Close, width=width2, color=downColor)
 
-        #Limits
         minY = history["Low"].min()
         maxY = history["High"].max()
         lastPrice = history["Close"].iloc[-1]
 
-        #X-Axis Formatter (Integer -> Date)
         def format_date(x, pos=None):
             idx = int(x)
             if 0 <= idx < len(history):
@@ -500,23 +432,22 @@ class Charts:
                 elif duration in ["1mo", "3mo", "6mo", "ytd"]:
                     return date_val.strftime("%b %d")
                 elif duration in ["1y", "2y"]:
-                    return date_val.strftime("%b %Y") #Month Year
+                    return date_val.strftime("%b %Y")
                 else: 
-                    return date_val.strftime("%Y") #Just Year
+                    return date_val.strftime("%Y")
             return ""
 
         ax1.xaxis.set_major_formatter(FuncFormatter(format_date))
         ax1.xaxis.set_major_locator(MaxNLocator(nbins=10))
         ax1.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark)
         
-        self._format_axes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
+        self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
         ax1.set_xlim(-0.5, len(history) - 0.5)
 
         #ax1.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
         ax1.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
         #ax1.set_axisbelow(True) 
 
-        #Annotation
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
                     xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
@@ -525,7 +456,7 @@ class Charts:
         plt.title(f"{str.upper(ticker)} History ({duration})", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
-        chartBuf = self._save_buffer(fig)
+        chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
     
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
@@ -537,54 +468,48 @@ class Charts:
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
-        #Data Slicing for plotting context
         plotHistory = history[history.index > lastDate - timedelta(days=14)] if model != 0 else history
         quantiles = np.linspace(0.05, 0.95, 11)
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        prophetTrend, prophetSigma = self._prophetInit(model, history, lastDate, curPrice)
+        histories = {90: [0.01, "W"], 365: [0.5, "D"], 730: [0.47, "W"], 1095: [0.01, "ME"], 1825: [0.01, "YS"]}
+        prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories)
 
-        if model != 1: #Calculate IV if not purely Prophet
+        if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
             
-        if model == 1: #Prophet Only
+        if model == 1:
             if prophetTrend is None: raise ValueError("Prophet generation failed")
             points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
             
-        elif model == 2 and len(points) > 0 and prophetTrend is not None: #Aggregate
+        elif model == 2 and len(points) > 0 and prophetTrend is not None:
             spread = points - curPrice
             points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
 
-        if len(points) == 0: return None #Return None to redo model using Prophet only
+        if len(points) == 0: return None
 
-        #Plotting
         points = np.maximum(points, 0.01)
         futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
         
-        fig, ax = self._setup_figure()
-        
-        #Draw Line + Gradient
+        fig, ax = self._setupFigure()
         ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
         
         minY = min(plotHistory["Close"].min(), np.min(points))
         maxY = max(plotHistory["Close"].max(), np.max(points))
         
-        self._draw_gradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
+        self._drawGradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
-        #Draw Fan
         mid = len(quantiles) // 2
         for i in range(mid):
             ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
 
-        #Draw Median Line
         median = points[mid]
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
 
-        #Format & Save
         allDates = list(plotHistory.index) + futureDates
-        self._format_axes(ax, allDates, minY, maxY, median[-1])
+        self._formatAxes(ax, allDates, minY, maxY, median[-1])
         
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), 
@@ -594,7 +519,7 @@ class Charts:
         plt.title(f"{str.upper(ticker)} Prediction (90d)", 
                   fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
-        chartBuf = self._save_buffer(fig)
+        chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
     
     def projectTest(self, ticker, weights, today): #period given in days
@@ -607,7 +532,6 @@ class Charts:
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
-        #Data Slicing for plotting context
         plotHistory = history[history.index > lastDate-timedelta(days=14)]
         quantiles = np.linspace(0.05, 0.95, 11)
         futureDays = np.arange(0, forward + 1)
@@ -617,32 +541,26 @@ class Charts:
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
 
-        #Plotting
         points = np.maximum(points, 0.01)
         futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
         
-        fig, ax = self._setup_figure()
-        
-        #Draw Line + Gradient
+        fig, ax = self._setupFigure()
         ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
         
         minY = min(plotHistory["Close"].min(), np.min(points))
         maxY = max(plotHistory["Close"].max(), np.max(points))
         
-        self._draw_gradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
+        self._drawGradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
-        #Draw Fan
         mid = len(quantiles) // 2
         for i in range(mid):
             ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
 
-        #Draw Median Line
         median = points[mid]
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed"))
 
-        #Format & Save
         allDates = list(plotHistory.index) + futureDates
-        self._format_axes(ax, allDates, minY, maxY, median[-1])
+        self._formatAxes(ax, allDates, minY, maxY, median[-1])
         
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), 

@@ -134,7 +134,7 @@ class Robot(commands.Cog):
         embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
         txt = open("index/help.txt","r")
         embed.description = f"""{txt.read()}"""
-        await interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
@@ -234,26 +234,6 @@ class Robot(commands.Cog):
                 f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:",
                 file=file, embed=embed, view=feedback_view
             )
-        else:
-            await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
-    
-    @app_commands.command(name="predictiontest", description="Predicts future movements of a given ticker")
-    @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", weights="Prediction weights for testing")
-    @commands.is_owner()
-    async def predictTest(self, interaction: discord.Interaction, ticker: str, weights:str):
-        await interaction.response.defer()
-
-        embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
-        embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
-
-        img = charts.projectTest(ticker, weights)
-        if img:
-            file = discord.File(img, filename="output.png")
-            embed.set_image(url="attachment://output.png")
-            
-            await interaction.followup.send(
-                f"{weights}:",
-                file=file, embed=embed)
         else:
             await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
 

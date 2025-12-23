@@ -1,24 +1,36 @@
-## Tickers: Returns a list of the top tickers across discord and checks whether your ticker is valid.
-```/tickers <action> <ticker>```
-- action (**Required**): Desired action to use.
-- top [action]: Return top 50 tickers today.
-- check [action]: Returns whether ticker is valid and provides closest match.
-- ticker (*Optional*): Only required for checking.
-
-## Prediction: Takes a ticker and returns a 3mo prediction probability.
-```/predict <ticker> <model>```
-- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
-- model (*Optional*): Choose from Implied Volatility, Extrapolation, Aggregrate-Extrapolation, and Logical Analysis. ([more details](https://github.com/razoring/QuantumDiscordBot))
-
-## Quote: Tracks ticker infomation live; use refresh to quickly update
+## Tickers:
+Returns top tickers across discord or checks whether your ticker is valid.
+```/tickers <action> <ticker?>```
+- action: Desired action to use.
+    - list: Returns top tickers today. ```/tickers action:list```
+    - check: Returns whether ticker is valid and provides closest match. ```/tickers action:check ticker:^spx```
+- ticker: Only required when checking.
+## Prediction:
+Takes a ticker and returns a 3mo prediction probability.
+```/predict <ticker> <model?>```
+- ticker: Valid Yahoo Finance ticker. (use /tickers to validate)
+- model: Choose from Implied Volatility, Extrapolation, Aggregrate-Extrapolation, and Logical Analysis. ([more details](https://github.com/razoring/QuantumDiscordBot))
+## Quote:
+Tracks ticker infomation live; use refresh to quickly update
 ```/quote <ticker>```
-- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
-
-## Chart: Returns the live quote and candlestick chart of the tickers up to the duration.
+- ticker: Valid Yahoo Finance ticker. (use /tickers to validate)
+## Chart:
+Returns the live quote and candlestick chart of the tickers up to the duration.
 ```/chart <ticker> <duration>```
-- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
-- duration (**Required**): Choose from the list.
-
-## Alerts: Set reminders for when your ticker reaches a certain price or return the daily volatility.
-```/alerts <action> <ticker/identifier> <price>```
-- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
+- ticker: Valid Yahoo Finance ticker. (use /tickers to validate)
+- duration: Choose from the list.
+## Alerts:
+Set reminders for when your ticker reaches a certain price or return the daily volatility.
+```/alerts <action> <ticker/identifier> <price?>```
+- ticker: Valid Yahoo Finance ticker. (use /tickers to validate)
+- action: Desired action to use.
+    - create: Creates an alert ```/alerts. action:create ticker:meta price:700```
+    - list: List all active alerts with their identifiers. ```/alerts action:list```
+    - delete: Deletes a specific alert with the identifier. ```/alerts action:delete identifier:123456790```
+    - clear: Deletes all alerts. ```/alerts action:clear```
+## Stats:
+See infomation about yourself and the leaderboard.
+```/stats```
+## Configure:
+Requires administrator permissions. Configure bot channels, automations, link to dashboard, etc.
+```/configure```
