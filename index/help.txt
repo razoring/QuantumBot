@@ -1,15 +1,24 @@
-/predict <ticker> <model>  
-Inputs: ticker is required, model is optional
+## Tickers: Returns a list of the top tickers across discord and checks whether your ticker is valid.
+```/tickers <action> <ticker>```
+- action (**Required**): Desired action to use.
+- top [action]: Return top 50 tickers today.
+- check [action]: Returns whether ticker is valid and provides closest match.
+- ticker (*Optional*): Only required for checking.
 
-/chart <ticker> <duration>  
-Inputs: ticker is required, duration is required
+## Prediction: Takes a ticker and returns a 3mo prediction probability.
+```/predict <ticker> <model>```
+- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
+- model (*Optional*): Choose from Implied Volatility, Extrapolation, Aggregrate-Extrapolation, and Logical Analysis. ([more details](https://github.com/razoring/QuantumDiscordBot))
 
-/quote <ticker>  
-Inputs: ticker is required  
+## Quote: Tracks ticker infomation live; use refresh to quickly update
+```/quote <ticker>```
+- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
 
-/alerts <action> <ticker/identifier> <price>  
-Inputs: action is required, ticker optional, identifier optional, price optional 
-Set Alerts: /alerts action:create ticker:meta price:600  
-List Alerts (Returns an identifier): /alerts action:list
-Delete An Alerts: /alerts action:delete identifier:1204952  
-Delete All Alerts: /alerts action:clear
+## Chart: Returns the live quote and candlestick chart of the tickers up to the duration.
+```/chart <ticker> <duration>```
+- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
+- duration (**Required**): Choose from the list.
+
+## Alerts: Set reminders for when your ticker reaches a certain price or return the daily volatility.
+```/alerts <action> <ticker/identifier> <price>```
+- ticker (**Required**): Valid Yahoo Finance ticker. (use /tickers to validate)
