@@ -522,8 +522,8 @@ class Charts:
         chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
     
-    def projectTest(self, ticker, weights, today): #period given in days
-        today = datetime.strptime(today, "%Y-%m-%d")
+    def projectTestGraphic(self, ticker, weights, today): #period given in days
+        today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
         forward = 90
         stock = yf.Ticker(ticker)
         history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
@@ -572,3 +572,25 @@ class Charts:
 
         chartBuf = self._save_buffer(fig)
         return chartBuf
+    
+    def projectTestValues(self, ticker, weights, today): #period given in days
+        today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
+        forward = 90
+        stock = yf.Ticker(ticker)
+        history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
+        if history.empty: return None
+        
+        curPrice = history["Close"].iloc[-1]
+        lastDate = history.index[-1]
+        
+        plotHistory = history[history.index > lastDate-timedelta(days=14)]
+        quantiles = np.linspace(0.05, 0.95, 11)
+        futureDays = np.arange(0, forward + 1)
+        
+        points = []
+        prophetTrend, prophetSigma = self._prophetTest(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights)
+        if prophetTrend is None: raise ValueError("Prophet generation failed")
+        points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
+
+        points = np.maximum(points, 0.01)
+        return points
