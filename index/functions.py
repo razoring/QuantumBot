@@ -248,9 +248,8 @@ class Charts:
             points.append(cs(futureDays))
         return np.array(points)
     
-    def _prophetInit(self, history, lastDate, curPrice, histories):
+    def _prophetInit(self, history, lastDate, curPrice, histories, forward=90):
         # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
-        forward = 90
         prophetTrend = None
         prophetSigma = 0
 
@@ -537,7 +536,7 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        prophetTrend, prophetSigma = self._prophetTest(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights)
+        prophetTrend, prophetSigma = self._prophetInit(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
 
@@ -573,9 +572,8 @@ class Charts:
         chartBuf = self._save_buffer(fig)
         return chartBuf
     
-    def projectTestValues(self, ticker, weights, today): #period given in days
+    def projectTestDay(self, ticker, weights, today): #period given in days
         today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
-        forward = 90
         stock = yf.Ticker(ticker)
         history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
         if history.empty: return None
@@ -583,14 +581,8 @@ class Charts:
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
-        plotHistory = history[history.index > lastDate-timedelta(days=14)]
-        quantiles = np.linspace(0.05, 0.95, 11)
-        futureDays = np.arange(0, forward + 1)
-        
         points = []
-        prophetTrend, prophetSigma = self._prophetTest(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights)
+        prophetTrend = self._prophetInit(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
-
-        points = np.maximum(points, 0.01)
-        return points
+        points = prophetTrend
+        return points[0][1]
