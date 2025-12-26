@@ -472,7 +472,7 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        histories = {90: [0.01, "W"], 365: [0.5, "D"], 730: [0.47, "W"], 1095: [0.01, "ME"], 1825: [0.01, "YS"]}
+        histories = {90: [0.04898536868836203, "W"], 365: [0.5872746791180823, "D"], 730: [0.08848503900838377, "W"], 1095: [0.21615744671675696, "ME"], 1825: [0.05909746646841502, "YS"]}
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories)
 
         if model != 1:
