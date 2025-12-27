@@ -572,12 +572,12 @@ class Charts:
         chartBuf = self._save_buffer(fig)
         return chartBuf
     
-    def projectTestDay(self, ticker, weights, today): #period given in days
-        today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
-        stock = yf.Ticker(ticker)
-        history = stock.history(start=today-timedelta(days=365), end=today, interval="1d")
-        if history.empty: return None
-        
+    def projectTestDay(self, ticker, weights, history, today): #period given in days
+        if isinstance(today, str): today = pd.to_datetime(today)
+        start_date = today - timedelta(days=1825)
+        subset = history[(history.index >= start_date) & (history.index <= today)]
+        if subset.empty: return None
+    
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
         
