@@ -47,13 +47,13 @@ for symbol in symbols:
                 bestWeight = tests
                 bestError = error
                 bestProx = bestError*0.01
-            #print(trials, error, bestError, bestProx, tests, bestWeight)
+            print(trials, error, bestError, bestProx, tests, bestWeight)
             trials += 1
 
         prevWeight, count = biases[sector]
         cma = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))]
         biases[sector] = [cma,count+1]
-        #print(biases)
+        print(biases)
 
 with open("index/weights.txt", "a") as file:
     for s, val in biases.items():

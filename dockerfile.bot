@@ -6,4 +6,3 @@ COPY . .
 CMD ["python3","index/instance.py"]
 
 # docker build -t quantum:latest . -> docker build with tag (name) quantum (must be lowercase) with everything the cwd
-# docker run 
