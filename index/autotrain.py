@@ -23,7 +23,9 @@ dates = pd.date_range(start=ranges[0], end=ranges[1])
 biases:dict[str,list] = {}
 for symbol in symbols:
     print(symbol)
-    sector = yf.Sector(yf.Ticker(symbol).info.get("sectorKey", "Unknown")).ticker.info["displayName"]
+    sector = yf.Sector(yf.Ticker(symbol).info.get("sectorKey", "Unknown"))
+    if "Unknown" not in sector:
+        sector = sector.ticker.info["displayName"]
     prices = yf.download(symbol, start=ranges[0], end=ranges[1], progress=False)["Close"]
     if sector not in biases:
         biases[sector] = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
