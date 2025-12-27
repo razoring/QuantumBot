@@ -578,11 +578,11 @@ class Charts:
         subset = history[(history.index >= start_date) & (history.index <= today)]
         if subset.empty: return None
     
-        curPrice = history["Close"].iloc[-1]
-        lastDate = history.index[-1]
+        curPrice = subset["Close"].iloc[-1]
+        lastDate = subset.index[-1]
         
         points = []
-        prophetTrend = self._prophetInit(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        prophetTrend = self._prophetInit(history=subset, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         points = prophetTrend
         return points[0][1]
