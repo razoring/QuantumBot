@@ -6,3 +6,5 @@ bin/
 .vscode/settings.json
 index/test.ipynb
 projections_test.py
+dockerfile.train
+dockerfile.bot
