@@ -53,7 +53,7 @@ for symbol in symbols:
         biases[sector] = [cma,count+1]
         print(biases)
 
-file = open("index/weights.txt","a")
-for s, val in biases.items():
-    file.write(f"{s}: {val}\n")
-file.close()
+with open("index/weights.txt", "a") as file:
+    for s, val in biases.items():
+        file.write(f"{s}: {val}\n")
+    file.close()
