@@ -56,3 +56,4 @@ for symbol in symbols:
 file = open("index/weights.txt","a")
 for s, val in biases.items():
     file.write(f"{s}: {val}\n")
+file.close()
