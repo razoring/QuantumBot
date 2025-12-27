@@ -1,0 +1,9 @@
+FROM python:3.9.6
+WORKDIR /.
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+CMD ["python3","index/instance.py"]
+
+# docker build -t quantum:latest . -> docker build with tag (name) quantum (must be lowercase) with everything the cwd
+# docker run 
