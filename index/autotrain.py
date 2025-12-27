@@ -17,7 +17,7 @@ def distribute(values:list, error:float, proximity:float):
     total = sum(nudged)
     return [float(v/total) for v in nudged]
 
-ranges = ["2022-01-01","2025-11-30"]
+ranges = ["2023-01-01","2025-11-30"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
 
 biases:dict[str,list] = {}
