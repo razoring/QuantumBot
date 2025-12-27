@@ -2,9 +2,10 @@ import concurrent.futures
 import numpy as np
 import yfinance as yf
 import functions
-import pandas as pd
 import random
 import warnings
+import sys
+
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -16,79 +17,123 @@ def distribute(values:list, error:float, proximity:float):
     total = sum(nudged)
     return [float(v/total) for v in nudged]
 
-def process_symbol(symbol, ranges, initial_weights):
-    print(symbol)
-    ticker = yf.Ticker(symbol)
-    info = ticker.info
-    
-    sector = info.get("sector")
-    if not sector:
-        sector = info.get("quoteType", "Uncategorized")
-    
-    prices = yf.download(symbol, start=ranges[0], end=ranges[1], progress=False)["Close"]
-    if prices.empty:
+def processSymbol(symbol, ranges, weight):
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        sector = info.get("sector")
+        if not sector:
+            sector = info.get("quoteType", "Uncategorized")
+        
+        history = yf.download(symbol, start="2018-01-01", end="2025-11-30", progress=False)
+        
+        if history.empty:
+            return None, None, None
+
+        prices = history["Close"][(history.index >= ranges[0]) & (history.index <= ranges[1])]
+        
+        if prices.empty:
+            return None, None, None
+            
+        charts = functions.Charts()
+        daily = []
+        
+        best = weight
+        
+        for date in prices.index:
+            bestError = 9999.0
+            bestProx = 0.1
+            trials = 0
+            bestWeight = best
+
+            max_trials = 100 if len(daily) == 0 else 20
+
+            while trials <= max_trials:
+                tests:list = distribute(bestWeight,bestError,bestProx)
+                bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
+                try:
+                    results = charts.projectTestDay(ticker=symbol, weights=str(bias), history=history, today=date)
+                    
+                    guess = round(float(results), 2)
+                    actual = round(float(prices.loc[date]), 2)
+                    
+                    error = abs(actual-guess)
+                    if error < bestError:
+                        bestWeight = tests
+                        bestError = error
+                        bestProx = bestError*0.01
+                    
+                    if error < 0.05: break
+                    trials += 1
+                except Exception:
+                    trials += 1
+                    continue
+            
+            daily.append(bestWeight)
+            best = bestWeight
+        return symbol, sector, daily
+    except Exception as e:
+        print(f"CRITICAL ERROR for {symbol}: {e}")
         return None, None, None
-        
-    local_charts = functions.Charts()
-    symbol_daily_results = []
-    
-    current_best = initial_weights
-    
-    history = yf.download(symbol, start="2018-01-01", end="2025-11-30", progress=False)
-
-    for date in prices.index:
-        bestError = 9999.0
-        bestProx = 0.1
-        trials = 0
-        bestWeight = current_best
-
-        while trials <= 20:
-            tests:list = distribute(bestWeight,bestError,bestProx)
-            bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-            try:
-                res = local_charts.projectTestDay(ticker=symbol, weights=str(bias), history=history, today=date)
-                guess = round(float(res[0]), 2)
-                actual = round(float(prices.loc[date]), 2)
-                error = abs(actual-guess)
-                if error < bestError:
-                    bestWeight = tests
-                    bestError = error
-                    bestProx = bestError*0.01
-                print(trials, error, bestError, bestProx, tests, bestWeight)
-                if error < 0.05: break
-                trials += 1
-            except:
-                trials += 1
-                continue
-        
-        symbol_daily_results.append(bestWeight)
-        current_best = bestWeight
-        
-    return symbol, sector, symbol_daily_results
 
 if __name__ == "__main__":
-    symbols = {"NVDA","META","BYND","CHGG","AAPL","BRK-B","JNJ","AMZN","GOOGL","TSLA","AMD","PLTR","RIVN","COIN","AI","UPST","FSLY","OPEN","HOOD","SPY","QQQ","XLF","XLE","ARKK"}
+    symbols = {
+    # Mega Cap Tech
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
+    # Momentum
+    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
+    # Financials (Cyclical)
+    "JPM", "BAC", "V", "BRK-B", "PYPL"
+    # Consumer Defensive (Defensive/Low Beta)
+    "KO", "PG", "WMT", "MCD", "DG"
+    # Healthcare (Defensive)
+    "JNJ", "UNH", "PFE", "PFE"
+    # Energy/Industrial (Cyclical)
+    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO"
+    # Utility/Real Estate (Interest Rate Sensitive)
+    "NEE", "O", "NEM", "CVX"
+    # ETFS (Balanced/Fallback)
+    "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK"}
+
     ranges = ["2023-01-01","2025-11-30"]
     biases:dict[str,list] = {}
 
+    try:
+        dummy = yf.Ticker("SPY")
+        _ = dummy.info # Triggers cookie save
+        _ = dummy.history(period="1d") # Triggers data cookie save
+        print("STATUS: Cache Primed. Starting Parallel Processing")
+    except Exception as e:
+        print(f"ERROR: Cache priming failed, proceeding anyway: {e}")
+        sys.exit(1)
+
     with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = {executor.submit(process_symbol, s, ranges, [0.2, 0.2, 0.2, 0.2, 0.2]): s for s in symbols}
+        futures = {executor.submit(processSymbol, s, ranges, [0.2, 0.2, 0.2, 0.2, 0.2]): s for s in symbols}
         
         for future in concurrent.futures.as_completed(futures):
-            symbol, sector, daily_results = future.result()
-            
-            if not daily_results:
-                continue
+            try:
+                symbol, sector, results = future.result()
+                
+                if not results:
+                    continue
 
-            if sector not in biases:
-                biases[sector] = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+                if sector not in biases:
+                    biases[sector] = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
 
-            for bestWeight in daily_results:
-                prevWeight, count = biases[sector]
-                cma = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))]
-                biases[sector] = [cma, count+1]
-                print(biases)
-
-    with open("index/weights.txt", "a") as file:
+                for bestWeight in results:
+                    data = biases[sector]
+                    avg = np.array(data[0])
+                    n = data[1]
+                    
+                    cma = (avg * n + np.array(bestWeight))/n+1
+                    
+                    # Save as [list, int]
+                    biases[sector] = [cma.tolist(),n+1]
+            except Exception as exc:
+                print(f"ERROR: {exc}")
+    print("STATUS: PROCESSING FINISHED")
+    with open("index/weights.txt", "w") as file:
         for s, val in biases.items():
-            file.write(f"{s}: {val}\n")
+            line = f"{s}: {val}"
+            file.write(line + "\n")
