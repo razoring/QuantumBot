@@ -24,7 +24,7 @@ biases:dict[str,list] = {}
 for symbol in symbols:
     print(symbol)
     sector = yf.Sector(yf.Ticker(symbol).info.get("sectorKey", "Unknown"))
-    if "Unknown" not in sector:
+    if sector != "Unknown":
         sector = sector.ticker.info["displayName"]
     prices = yf.download(symbol, start=ranges[0], end=ranges[1], progress=False)["Close"]
     if sector not in biases:
