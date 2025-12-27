@@ -6,3 +6,4 @@ bin/
 .vscode/settings.json
 index/test.ipynb
 projections_test.py
+train.tar

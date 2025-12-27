@@ -6,3 +6,5 @@ COPY . .
 CMD ["python","index/instance.py"]
 
 # docker build -t quantum:latest . -> docker build with tag (name) quantum (must be lowercase) with everything the cwd
+# docker save quantum:train > train.tar
+# docker load -i _.tar
