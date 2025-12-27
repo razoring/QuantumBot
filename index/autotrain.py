@@ -34,17 +34,19 @@ def process_symbol(symbol, ranges, initial_weights):
     
     current_best = initial_weights
     
+    history = yf.download(symbol, start="2018-01-01", end="2025-11-30", progress=False)
+
     for date in prices.index:
         bestError = 9999.0
         bestProx = 0.1
         trials = 0
         bestWeight = current_best
 
-        while trials <= 50:
+        while trials <= 20:
             tests:list = distribute(bestWeight,bestError,bestProx)
             bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
             try:
-                res = local_charts.projectTestDay(ticker=symbol, weights=str(bias), today=date)
+                res = local_charts.projectTestDay(ticker=symbol, weights=str(bias), history=history, today=date)
                 guess = round(float(res[0]), 2)
                 actual = round(float(prices.loc[date]), 2)
                 error = abs(actual-guess)
@@ -53,6 +55,7 @@ def process_symbol(symbol, ranges, initial_weights):
                     bestError = error
                     bestProx = bestError*0.01
                 print(trials, error, bestError, bestProx, tests, bestWeight)
+                if error < 0.05: break
                 trials += 1
             except:
                 trials += 1
