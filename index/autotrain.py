@@ -92,11 +92,11 @@ if __name__ == "__main__":
     # Consumer Defensive (Defensive/Low Beta)
     "KO", "PG", "WMT", "MCD", "DG",
     # Healthcare (Defensive)
-    "JNJ", "UNH", "PFE", "PFE",
+    "JNJ", "UNH", "PFE",
     # Energy/Industrial (Cyclical)
     "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
     # Utility/Real Estate (Interest Rate Sensitive)
-    "NEE", "O", "NEM", "CVX",
+    "NEE", "O", "NEM",
     # ETFS (Balanced/Fallback)
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK"}
 
