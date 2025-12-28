@@ -55,7 +55,7 @@ def processSymbol(symbol, ranges, weight):
                 tests:list = distribute(bestWeight,bestError,bestProx)
                 bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
                 try:
-                    results = charts.projectTestDay(ticker=symbol, weights=str(bias), history=history, today=date)
+                    results = charts.projectTestDay(weights=str(bias), history=history, today=date)
                     
                     guess = round(float(results), 2)
                     actual = round(float(prices.loc[date]), 2)
@@ -132,7 +132,6 @@ if __name__ == "__main__":
                     
                     cma = (avg * n + np.array(bestWeight))/(n+1)
                     
-                    # Save as [list, int]
                     biases[sector] = [cma.tolist(),(n+1)]
             except Exception as exc:
                 logging.info(f"ERROR: {exc}")
@@ -140,4 +139,5 @@ if __name__ == "__main__":
     with open("data/weights.txt", "w") as file:
         for s, val in biases.items():
             line = f"{s}: {val}"
+            logging.info(f"{s}: {val}")
             file.write(line + "\n")
