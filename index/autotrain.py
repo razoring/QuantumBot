@@ -134,7 +134,7 @@ if __name__ == "__main__":
             except Exception as exc:
                 print(f"ERROR: {exc}")
     print("STATUS: PROCESSING FINISHED")
-    with open("index/weights.txt", "w") as file:
+    with open("data/weights.txt", "w") as file:
         for s, val in biases.items():
             line = f"{s}: {val}"
             file.write(line + "\n")
