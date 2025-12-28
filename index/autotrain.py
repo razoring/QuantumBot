@@ -18,6 +18,7 @@ def distribute(values:list, error:float, proximity:float):
     return [float(v/total) for v in nudged]
 
 def processSymbol(symbol, ranges, weight):
+    print(f"STATUS: {symbol}")
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info
