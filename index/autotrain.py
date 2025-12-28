@@ -5,6 +5,7 @@ import functions
 import random
 import warnings
 import sys
+import logging
 
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
@@ -18,7 +19,7 @@ def distribute(values:list, error:float, proximity:float):
     return [float(v/total) for v in nudged]
 
 def processSymbol(symbol, ranges, weight):
-    print(f"STATUS: {symbol}")
+    logging.info(f"STATUS: {symbol}")
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info
@@ -75,10 +76,12 @@ def processSymbol(symbol, ranges, weight):
             best = bestWeight
         return symbol, sector, daily
     except Exception as e:
-        print(f"CRITICAL ERROR for {symbol}: {e}")
+        logging.info(f"CRITICAL ERROR for {symbol}: {e}")
         return None, None, None
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stdout)
+
     symbols = {
     # Mega Cap Tech
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
@@ -104,9 +107,9 @@ if __name__ == "__main__":
         dummy = yf.Ticker("SPY")
         _ = dummy.info # Triggers cookie save
         _ = dummy.history(period="1d") # Triggers data cookie save
-        print("STATUS: Cache Primed. Starting Parallel Processing")
+        logging.info("STATUS: Cache Primed. Starting Parallel Processing")
     except Exception as e:
-        print(f"ERROR: Cache priming failed, proceeding anyway: {e}")
+        logging.info(f"ERROR: Cache priming failed, proceeding anyway: {e}")
         sys.exit(1)
 
     with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -127,13 +130,13 @@ if __name__ == "__main__":
                     avg = np.array(data[0])
                     n = data[1]
                     
-                    cma = (avg * n + np.array(bestWeight))/n+1
+                    cma = (avg * n + np.array(bestWeight))/(n+1)
                     
                     # Save as [list, int]
-                    biases[sector] = [cma.tolist(),n+1]
+                    biases[sector] = [cma.tolist(),(n+1)]
             except Exception as exc:
-                print(f"ERROR: {exc}")
-    print("STATUS: PROCESSING FINISHED")
+                logging.info(f"ERROR: {exc}")
+    logging.info("STATUS: PROCESSING FINISHED")
     with open("data/weights.txt", "w") as file:
         for s, val in biases.items():
             line = f"{s}: {val}"
