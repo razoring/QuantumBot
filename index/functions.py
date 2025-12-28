@@ -6,11 +6,9 @@ import yfinance as yf
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.ticker import FormatStrFormatter
+from matplotlib.patches import Polygon
 from matplotlib.colors import LinearSegmentedColormap, to_rgba
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 from scipy.interpolate import CubicSpline
 from scipy.stats import norm
 from datetime import datetime, timedelta
@@ -572,17 +570,16 @@ class Charts:
         chartBuf = self._save_buffer(fig)
         return chartBuf
     
-    def projectTestDay(self, ticker, weights, history, today): #period given in days
+    def projectTestDay(self, weights, history, today): 
         if isinstance(today, str): today = pd.to_datetime(today)
         start_date = today - timedelta(days=1825)
+        
         subset = history[(history.index >= start_date) & (history.index <= today)]
         if subset.empty: return None
     
-        curPrice = history["Close"].iloc[-1]
-        lastDate = history.index[-1]
+        curPrice = subset["Close"].iloc[-1]
+        lastDate = subset.index[-1]
         
-        points = []
-        prophetTrend = self._prophetInit(history=history, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        prophetTrend, _ = self._prophetInit(history=subset, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        points = prophetTrend
-        return points[0][1]
+        return float(prophetTrend[1])
