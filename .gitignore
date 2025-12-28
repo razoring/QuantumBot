@@ -8,3 +8,5 @@ index/test.ipynb
 projections_test.py
 train.tar
 .DS_Store
+.venv/
+index/__pycache__
