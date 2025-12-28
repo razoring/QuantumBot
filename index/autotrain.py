@@ -84,15 +84,15 @@ if __name__ == "__main__":
     # Momentum
     "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
     # Financials (Cyclical)
-    "JPM", "BAC", "V", "BRK-B", "PYPL"
+    "JPM", "BAC", "V", "BRK-B", "PYPL",
     # Consumer Defensive (Defensive/Low Beta)
-    "KO", "PG", "WMT", "MCD", "DG"
+    "KO", "PG", "WMT", "MCD", "DG",
     # Healthcare (Defensive)
     "JNJ", "UNH", "PFE", "PFE"
     # Energy/Industrial (Cyclical)
-    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO"
+    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
     # Utility/Real Estate (Interest Rate Sensitive)
-    "NEE", "O", "NEM", "CVX"
+    "NEE", "O", "NEM", "CVX",
     # ETFS (Balanced/Fallback)
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK"}
 
