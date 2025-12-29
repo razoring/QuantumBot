@@ -68,6 +68,7 @@ for symbol in symbols:
         print(date)
         bestError = 9999.0
         bestProx = 0.1
+        bestGuess = 0
         trials = 0
 
         while trials <= 30:
@@ -79,8 +80,9 @@ for symbol in symbols:
             if error < bestError:
                 bestWeight = tests
                 bestError = error
+                bestGuess = guess
                 bestProx = bestError*0.02
-            print(trials, guess, actual, error, bestError, bestProx, bestWeight)
+            print(trials, guess, actual, error, bestError, tests)
             if error <= max(0.04*math.log10(actual),0.001): break
             trials += 1
 
@@ -88,6 +90,7 @@ for symbol in symbols:
         avg = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))] #ema
         #avg = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))] #cma
         biases[sector] = [avg,count+1]
+        print(trials, bestGuess, actual, error, bestError, bestProx, bestWeight)
         print(biases)
 
 for s, val in biases.items():
