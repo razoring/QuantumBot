@@ -22,7 +22,6 @@ ranges = ["2023-01-01", "2025-11-30"]
 startDate = datetime.strptime(ranges[0], "%Y-%m-%d") - timedelta(days=365)
 endDate = datetime.strptime(ranges[1], "%Y-%m-%d")
 dates = pd.date_range(start=ranges[0], end=ranges[1])
-maxWorkers = 6  # tune to your CPU
 
 # thread-safe biases structure:
 # biases[sector] = {
@@ -170,7 +169,7 @@ def processSymbol(sym: str):
         print(f"error {sym}: {e}")
 
 def main():
-    with ThreadPoolExecutor(max_workers=maxWorkers) as exe:
+    with ThreadPoolExecutor() as exe:
         futures = [exe.submit(processSymbol, s) for s in symbols]
         for fut in as_completed(futures):
             try:
