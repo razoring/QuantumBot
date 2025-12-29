@@ -83,7 +83,7 @@ for symbol in symbols:
                 bestGuess = guess
                 bestProx = bestError*0.02
             print(trials, guess, actual, error, bestError, tests)
-            if error <= max(0.04*math.log10(actual),0.001): break
+            if error <= max(0.04*math.log10(actual),0.001): break # short-circut, early exit
             trials += 1
 
         prevWeight, count = biases[sector]
