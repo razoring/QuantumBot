@@ -574,7 +574,7 @@ class Charts:
     
     def projectTestDay(self, history, weights, today): #period given in days
         today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
-        window = history.loc[today - timedelta(days=365) : today]
+        window = history[(history.index >= today - timedelta(days=365)) & (history.index <= today)]
 
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]

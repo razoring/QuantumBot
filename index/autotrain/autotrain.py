@@ -12,11 +12,9 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 charts = functions.Charts()
 
 def distribute(values:list, error:float, proximity:float):
-    offset = error*proximity
-    nudged = [v + random.uniform(-offset, offset) for v in values]
-    nudged = [max(v, 0.001) for v in nudged]
-    total = sum(nudged)
-    return [float(v/total) for v in nudged]
+    offset = error*proximity+0.1*random.random()
+    nudged = [max(v+random.uniform(-offset,offset), 0.001) for v in values]
+    return [float(v/sum(nudged)) for v in nudged]
 
 ranges = ["2023-01-01","2025-11-30"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
@@ -42,7 +40,7 @@ for symbol in symbols:
         bestProx = 0.1
         trials = 0
 
-        while trials <= 50:
+        while trials <= 30:
             tests:list = distribute(bestWeight,bestError,bestProx)
             bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
             guess = round(charts.projectTestDay(history=history, weights=str(bias), today=date),2)
@@ -51,12 +49,13 @@ for symbol in symbols:
             if error < bestError:
                 bestWeight = tests
                 bestError = error
-                bestProx = bestError*0.01
-            print(trials, guess, actual, error, bestError, bestProx)
-            if error < 0.05: break
+                bestProx = bestError*0.02
+            print(trials, guess, actual, error, bestError, bestProx, bestWeight)
+            if error <= (actual*0.01)**1.5: break
             trials += 1
 
         prevWeight, count = biases[sector]
+        #ema = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))]
         cma = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))]
         biases[sector] = [cma,count+1]
         print(biases)
