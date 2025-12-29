@@ -253,9 +253,40 @@ class Charts:
         prophetTrend = None
         prophetSigma = 0
 
-        #histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
+        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
             
+        for h, nested in histories.items():
+            start_date = lastDate - timedelta(days=h)
+            data = history[history.index > start_date].reset_index()[["Date", "Close"]]
+            if len(data) < 20: continue
+
+            data.columns = ["ds", "y"]
+            data["ds"] = data["ds"].dt.tz_localize(None)
+
+            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.052) #underfit > increase, overfit > decrease; d: 0.05
+            m.fit(data)
+            
+            future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
+            fcst = m.predict(future)
+            
+            trend = fcst.tail(forward + 1)["yhat"].values
+            #Offset to align with current price
+            prophetSum.append((trend + curPrice - trend[0]) * nested[0])
+        
+        if prophetSum:
+            prophetTrend = np.sum(prophetSum, axis=0)
+                
+        return prophetTrend, prophetSigma
+    
+    def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
+        # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
+        prophetTrend = None
+        prophetSigma = 0
+
+        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
+        prophetSum = []
+        
         for h, nested in histories.items():
             start_date = lastDate - timedelta(days=h)
             data = history[history.index > start_date].reset_index()[["Date", "Close"]]
@@ -580,7 +611,7 @@ class Charts:
         lastDate = window.index[-1]
         
         points = []
-        prophetTrend = self._prophetInit(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        prophetTrend = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         points = prophetTrend
         return points[0][1]
