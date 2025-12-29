@@ -1,4 +1,20 @@
-symbols = {"SPY"} # diverse data
+symbols = {
+    # Mega Cap Tech
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
+    # Momentum
+    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
+    # Financials (Cyclical)
+    "JPM", "BAC", "V", "BRK-B", "PYPL",
+    # Consumer Defensive (Defensive/Low Beta)
+    "KO", "PG", "WMT", "MCD", "DG",
+    # Healthcare (Defensive)
+    "JNJ", "UNH", "PFE",
+    # Energy/Industrial (Cyclical)
+    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
+    # Utility/Real Estate (Interest Rate Sensitive)
+    "NEE", "O", "NEM",
+    # ETFS (Balanced/Fallback)
+    "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK"}
 
 import yfinance as yf
 import functions as functions
