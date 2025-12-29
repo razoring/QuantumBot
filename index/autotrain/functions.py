@@ -303,7 +303,7 @@ class Charts:
         prophetTrend = None
         prophetSigma = 0
 
-        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
+        #histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
 
         # ensure histories is a dict (do this once before calling in outer code if possible)

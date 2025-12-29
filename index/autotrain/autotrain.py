@@ -72,7 +72,7 @@ for symbol in symbols:
         while trials <= 30:
             tests:list = distribute(bestWeight,bestError,bestProx)
             bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-            guess = round(charts.projectTestDay(history=history, weights=str(bias), today=date),2)
+            guess = round(charts.projectTestDay(history=history, weights=bias, today=date),2)
             actual = round(round(float(window[date]),2), 2)
             error = abs(actual-guess)
             if error < bestError:
