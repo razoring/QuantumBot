@@ -79,14 +79,14 @@ for symbol in symbols:
                 bestWeight = tests
                 bestError = error
                 bestProx = bestError*0.02
-            #print(trials, guess, actual, error, bestError, bestProx, bestWeight)
+            print(trials, guess, actual, error, bestError, bestProx, bestWeight)
             if error <= (actual*0.01)**1.5: break
             trials += 1
 
         prevWeight, count = biases[sector]
-        #ema = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))]
-        cma = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))]
-        biases[sector] = [cma,count+1]
+        avg = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))] #ema
+        #avg = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))] #cma
+        biases[sector] = [avg,count+1]
         print(biases)
 
 for s, val in biases.items():
