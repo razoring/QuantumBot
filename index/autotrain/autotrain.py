@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 import math
+import json
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 charts = functions.Charts()
@@ -48,6 +49,34 @@ symbols = {
     "GLD", "SLV", "GDX", "USO", "UNG",
     "MARA", "RIOT", "MSTR", "GBTC"
 }
+
+def saveBiases(biases, path="biases.json"):
+    out = {}
+
+    for sec, secData in biases.items():
+        secWeights = secData["sectorWeights"]
+        secCount = secData["sectorCount"]
+
+        inds = {}
+        for ind, (w, c) in secData["industries"].items():
+            inds[ind] = {
+                "weights": w,
+                "count": c
+            }
+
+        out[sec] = {
+            "sectorWeights": secWeights,
+            "sectorCount": secCount,
+            "industries": inds
+        }
+
+    with open(path, "w") as f:
+        json.dump(out, f, indent=4)
+
+def loadBiases(path="biases.json"):
+    with open(path, "r") as f:
+        return json.load(f)
+#biases = loadBiases()
 
 def initBiasIfMissing(sec: str, ind: str):
     """Ensure sector and industry entries exist (thread-safe)."""
@@ -177,11 +206,7 @@ def main():
             except Exception as e:
                 print("worker error:", e)
 
-    # print summary
-    for s, v in biases.items():
-        print(f"{s}: sectorW={v['sectorWeights']}, sectorCount={v['sectorCount']}")
-        for indName, (w, c) in v["industries"].items():
-            print(f"  {indName}: weights={w}, count={c}")
+    saveBiases(biases=biases,path="index\autotrain\weights.json")
 
 if __name__ == "__main__":
     main()
