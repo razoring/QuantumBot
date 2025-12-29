@@ -1,4 +1,4 @@
-symbols = {"NVDA"} # diverse data
+symbols = {"SPY"} # diverse data
 
 import yfinance as yf
 import functions as functions
@@ -51,7 +51,7 @@ for symbol in symbols:
                 bestError = error
                 bestProx = bestError*0.02
             print(trials, guess, actual, error, bestError, bestProx, bestWeight)
-            if error <= (actual*0.01)**1.5: break
+            if error <= (actual*0.002)**1.5: break
             trials += 1
 
         prevWeight, count = biases[sector]
