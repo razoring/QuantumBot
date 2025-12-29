@@ -20,16 +20,14 @@ symbols = {
     # Transport:
     "LMT", "BA", "UPS", "FDX", "GM", "F",
     # Downers: 
-    "UPST", "AFRM", "CHGG", "BYND", "VIXY"
+    "UPST", "AFRM", "CHGG", "BYND", "VIXY",
     # International:
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
     # Commodities:
-    "GLD", "SLV", "GDX", "USO", "UNG"
+    "GLD", "SLV", "GDX", "USO", "UNG",
     # Crypto:
     "MARA", "RIOT", "MSTR", "GBTC"
     }
-    
-symbols = {"NVDA"}
 
 import yfinance as yf
 import functions as functions
@@ -82,7 +80,7 @@ for symbol in symbols:
                 bestWeight = tests
                 bestError = error
                 bestProx = bestError*0.02
-            print(trials, guess, actual, error, bestError, bestProx, bestWeight)
+            #print(trials, guess, actual, error, bestError, bestProx, bestWeight)
             if error <= (actual*0.01)**1.5: break
             trials += 1
 
