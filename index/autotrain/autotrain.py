@@ -90,7 +90,7 @@ for symbol in symbols:
         avg = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))] #ema
         #avg = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))] #cma
         biases[sector] = [avg,count+1]
-        print(trials, bestGuess, actual, error, bestError, bestProx, bestWeight)
+        print("best:", bestGuess, actual, error, bestError, bestProx, bestWeight)
         print(biases)
 
 for s, val in biases.items():
