@@ -198,7 +198,7 @@ def processSymbol(sym: str):
         print(f"error {sym}: {e}")
 
 def main():
-    with ThreadPoolExecutor() as exe:
+    with ThreadPoolExecutor(max_workers=16) as exe:
         futures = [exe.submit(processSymbol, s) for s in symbols]
         for fut in as_completed(futures):
             try:
