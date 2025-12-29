@@ -302,6 +302,8 @@ class Charts:
     def _prophetInit(self, history, lastDate, curPrice, histories, forward=90):
         prophetTrend = None
         prophetSigma = 0
+
+        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
 
         # ensure histories is a dict (do this once before calling in outer code if possible)
@@ -327,17 +329,14 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=10)
-                m.fit(data)
-
-                future = m.make_future_dataframe(periods=forward, freq=nested[1])
-                fcst = m.predict(future)
-                trend = fcst.tail(forward + 1)["yhat"].values
-
-                # store raw trend in cache (before offset)
-                self._cache_set(key, trend)
-
-            # Offset to align with current price (do not cache offset)
+            m = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
+            m.fit(data)
+            
+            future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
+            fcst = m.predict(future)
+            
+            trend = fcst.tail(forward + 1)["yhat"].values
+            #Offset to align with current price
             prophetSum.append((trend + curPrice - trend[0]) * nested[0])
 
         if prophetSum:

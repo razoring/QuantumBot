@@ -6,13 +6,13 @@ symbols = {
     # Financials (Cyclical)
     "JPM", "BAC", "V", "BRK-B", "PYPL",
     # Consumer Defensive (Defensive/Low Beta)
-    "KO", "PG", "WMT", "MCD", "DG", "DE", "LOW",
+    "KO", "PG", "WMT", "MCD", "DG",
     # Healthcare (Defensive)
     "JNJ", "UNH", "PFE",
     # Energy/Industrial (Cyclical)
     "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
     # Utility/Real Estate (Interest Rate Sensitive)
-    "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD"
+    "NEE", "O", "NEM",
     # ETFS (Balanced/Fallback)
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
     # Bing Suggestions:
@@ -53,8 +53,7 @@ for symbol in symbols:
     print(symbol)
     stock = yf.Ticker(symbol)
     info = stock.info
-    sector = info.get("sectorKey", info.get("quoteType", "uncategorized"))
-    industry = info.get("industryKey", "unknown")
+    sector = info.get("sectorKey", info.get("quoteType", "Uncategorized"))
     history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=365), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
     window = history[ranges[0]:ranges[1]]["Close"] #training window
     if history.empty: break
@@ -73,7 +72,7 @@ for symbol in symbols:
         while trials <= 30:
             tests:list = distribute(bestWeight,bestError,bestProx)
             bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-            guess = round(charts.projectTestDay(history=history, weights=bias, today=date),2)
+            guess = round(charts.projectTestDay(history=history, weights=str(bias), today=date),2)
             actual = round(round(float(window[date]),2), 2)
             error = abs(actual-guess)
             if error < bestError:
