@@ -205,8 +205,8 @@ def main():
                 fut.result()
             except Exception as e:
                 print("worker error:", e)
-
-    saveBiases(biases=biases,path="index\autotrain\weights.json")
+    saveBiases(biases=biases,path="weights.json")
+    print(json.dumps(loadBiases("weights.json"), indent=4))
 
 if __name__ == "__main__":
     main()
