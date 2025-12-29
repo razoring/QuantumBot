@@ -1,5 +1,5 @@
 import yfinance as yf
-import functions2 as functions2
+import functions as functions
 import pandas as pd
 import random
 import warnings
@@ -10,7 +10,7 @@ import math
 import json
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
-charts = functions2.Charts()
+charts = functions.Charts()
 
 def distribute(values: list, err: float, prox: float):
     offset = err * prox + 0.1 * random.random()
