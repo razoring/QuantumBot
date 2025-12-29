@@ -49,6 +49,7 @@ symbols = {
     "GLD", "SLV", "GDX", "USO", "UNG",
     "MARA", "RIOT", "MSTR", "GBTC"
 }
+symbols = {"AAPL"}
 
 def saveBiases(biases, path="biases.json"):
     out = {}
@@ -79,7 +80,6 @@ def loadBiases(path="biases.json"):
 #biases = loadBiases()
 
 def initBiasIfMissing(sec: str, ind: str):
-    """Ensure sector and industry entries exist (thread-safe)."""
     with biasLock:
         if sec not in biases:
             biases[sec] = {
@@ -108,7 +108,6 @@ def updateBiases(sec: str, ind: str, bestWeight: list):
         secEntry["sectorCount"] = newSecCount
 
 def processSymbol(sym: str):
-    """Process a single symbol: fetch data, run per-day optimization, update biases."""
     try:
         print(sym)
         stock = yf.Ticker(sym)
@@ -190,6 +189,7 @@ def processSymbol(sym: str):
                     break
                 trials += 1
 
+            print(trials, actual, err, bestWeight)
             # update biases with the bestWeight found for this date
             updateBiases(sec, ind, bestWeight)
 
