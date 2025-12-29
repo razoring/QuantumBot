@@ -1,7 +1,7 @@
 symbols = {"NVDA"} # diverse data
 
 import yfinance as yf
-import functions
+import oldfunctions as functions
 import pandas as pd
 import random
 import warnings
