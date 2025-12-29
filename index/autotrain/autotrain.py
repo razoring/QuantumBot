@@ -81,7 +81,7 @@ for symbol in symbols:
                 bestError = error
                 bestProx = bestError*0.02
             print(trials, guess, actual, error, bestError, bestProx, bestWeight)
-            if error <= max(0.4*math.log(actual)): break
+            if error <= max(0.4*math.log10(actual),0.001): break
             trials += 1
 
         prevWeight, count = biases[sector]
