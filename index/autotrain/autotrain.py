@@ -34,6 +34,7 @@ import functions as functions
 import pandas as pd
 import random
 import warnings
+import math
 from datetime import datetime, timedelta
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
@@ -80,7 +81,7 @@ for symbol in symbols:
                 bestError = error
                 bestProx = bestError*0.02
             print(trials, guess, actual, error, bestError, bestProx, bestWeight)
-            if error <= (actual*0.01)**1.5: break
+            if error <= max(0.4*math.log(actual)): break
             trials += 1
 
         prevWeight, count = biases[sector]
