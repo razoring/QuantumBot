@@ -91,20 +91,19 @@ def initBiasIfMissing(sec: str, ind: str):
             biases[sec]["industries"][ind] = ([0.2, 0.2, 0.2, 0.2, 0.2], 0)
 
 def updateBiases(sec: str, ind: str, bestWeight: list):
-    """Update both industry and sector CMAs in a thread-safe way."""
     with biasLock:
         secEntry = biases[sec]
-        # update industry
         prevIndW, indCount = secEntry["industries"][ind]
         newIndCount = indCount + 1
-        newIndW = [(prevIndW[j] * indCount + bestWeight[j]) / newIndCount for j in range(len(prevIndW))]
+        newIndW = [prevIndW[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevIndW))]  #ema
+        #newIndW = [(prevIndW[j] * indCount + bestWeight[j]) / newIndCount for j in range(len(prevIndW))] #cma
         secEntry["industries"][ind] = (newIndW, newIndCount)
 
-        # update sector (aggregate)
         prevSecW = secEntry["sectorWeights"]
         secCount = secEntry["sectorCount"]
         newSecCount = secCount + 1
-        newSecW = [(prevSecW[j] * secCount + bestWeight[j]) / newSecCount for j in range(len(prevSecW))]
+        newSecW = [prevSecW[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevSecW))]  #ema
+        #newSecW = [(prevSecW[j] * secCount + bestWeight[j]) / newSecCount for j in range(len(prevSecW))] #cma
         secEntry["sectorWeights"] = newSecW
         secEntry["sectorCount"] = newSecCount
 
