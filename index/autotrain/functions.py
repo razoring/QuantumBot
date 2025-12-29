@@ -264,7 +264,7 @@ class Charts:
             data.columns = ["ds", "y"]
             data["ds"] = data["ds"].dt.tz_localize(None)
 
-            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True)
+            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=10)
             m.fit(data)
             
             future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
