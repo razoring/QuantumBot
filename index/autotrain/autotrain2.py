@@ -19,7 +19,7 @@ def distribute(values: list, err: float, prox: float):
     return [float(v / s) for v in nudged]
 
 # config
-ranges = ["2023-01-01", "2025-11-30"]
+ranges = ["2023-01-01", "2025-01-01"]
 startDate = datetime.strptime(ranges[0], "%Y-%m-%d") - timedelta(days=365)
 endDate = datetime.strptime(ranges[1], "%Y-%m-%d")
 dates = pd.date_range(start=ranges[0], end=ranges[1])
@@ -43,7 +43,7 @@ symbols = {
     "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD",
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
     "TNA", "TZA", "ROKU", "SOFI",
-    "LMT", "BA", "UPS", "FDX", "GM", "F",
+    "LMT", "BA", "UPS", "FDX", "GM", "F",                       
     "UPST", "AFRM", "CHGG", "BYND", "VIXY",
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
     "GLD", "SLV", "GDX", "USO", "UNG",
