@@ -1,94 +1,188 @@
-symbols = {
-    # Mega Cap Tech
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
-    # Momentum
-    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
-    # Financials (Cyclical)
-    "JPM", "BAC", "V", "BRK-B", "PYPL",
-    # Consumer Defensive (Defensive/Low Beta)
-    "KO", "PG", "WMT", "MCD", "DG", "DE", "LOW",
-    # Healthcare (Defensive)
-    "JNJ", "UNH", "PFE",
-    # Energy/Industrial (Cyclical)
-    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
-    # Utility/Real Estate (Interest Rate Sensitive)
-    "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD"
-    # ETFS (Balanced/Fallback)
-    "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
-    # Bing Suggestions:
-    "TNA", "TZA", "ROKU", "SOFI", 
-    # Transport:
-    "LMT", "BA", "UPS", "FDX", "GM", "F",
-    # Downers: 
-    "UPST", "AFRM", "CHGG", "BYND", "VIXY",
-    # International:
-    "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
-    # Commodities:
-    "GLD", "SLV", "GDX", "USO", "UNG",
-    # Crypto:
-    "MARA", "RIOT", "MSTR", "GBTC"
-    }
-
 import yfinance as yf
 import functions as functions
 import pandas as pd
 import random
 import warnings
 from datetime import datetime, timedelta
-# loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import math
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 charts = functions.Charts()
 
-def distribute(values:list, error:float, proximity:float):
-    offset = error*proximity+0.1*random.random()
-    nudged = [max(v+random.uniform(-offset,offset), 0.001) for v in values]
-    return [float(v/sum(nudged)) for v in nudged]
+def distribute(values: list, err: float, prox: float):
+    offset = err * prox + 0.1 * random.random()
+    nudged = [max(v + random.uniform(-offset, offset), 0.001) for v in values]
+    s = sum(nudged)
+    return [float(v / s) for v in nudged]
 
-ranges = ["2023-01-01","2025-11-30"]
+# config
+ranges = ["2023-01-01", "2025-11-30"]
+startDate = datetime.strptime(ranges[0], "%Y-%m-%d") - timedelta(days=365)
+endDate = datetime.strptime(ranges[1], "%Y-%m-%d")
 dates = pd.date_range(start=ranges[0], end=ranges[1])
+maxWorkers = 6  # tune to your CPU
 
-biases:dict[str,list] = {}
-for symbol in symbols:
-    print(symbol)
-    stock = yf.Ticker(symbol)
-    info = stock.info
-    sector = info.get("sectorKey", info.get("quoteType", "uncategorized"))
-    industry = info.get("industryKey", "unknown")
-    history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=365), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
-    window = history[ranges[0]:ranges[1]]["Close"] #training window
-    if history.empty: break
+# thread-safe biases structure:
+# biases[sector] = {
+#   "sectorWeights": [w1..w5],
+#   "sectorCount": n,
+#   "industries": { industryName: ([w1..w5], count) }
+# }
+biases = {}
+biasLock = threading.Lock()
 
-    if sector not in biases:
-        biases[sector] = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
-    
-    bestWeight = biases[sector][0]
+symbols = {
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
+    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
+    "JPM", "BAC", "V", "BRK-B", "PYPL",
+    "KO", "PG", "WMT", "MCD", "DG", "DE", "LOW",
+    "JNJ", "UNH", "PFE",
+    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
+    "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD",
+    "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
+    "TNA", "TZA", "ROKU", "SOFI",
+    "LMT", "BA", "UPS", "FDX", "GM", "F",
+    "UPST", "AFRM", "CHGG", "BYND", "VIXY",
+    "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
+    "GLD", "SLV", "GDX", "USO", "UNG",
+    "MARA", "RIOT", "MSTR", "GBTC"
+}
 
-    for i, date in enumerate(window.index):
-        print(date)
-        bestError = 9999.0
-        bestProx = 0.1
-        trials = 0
+def initBiasIfMissing(sec: str, ind: str):
+    """Ensure sector and industry entries exist (thread-safe)."""
+    with biasLock:
+        if sec not in biases:
+            biases[sec] = {
+                "sectorWeights": [0.2, 0.2, 0.2, 0.2, 0.2],
+                "sectorCount": 0,
+                "industries": {}
+            }
+        if ind not in biases[sec]["industries"]:
+            biases[sec]["industries"][ind] = ([0.2, 0.2, 0.2, 0.2, 0.2], 0)
 
-        while trials <= 30:
-            tests:list = distribute(bestWeight,bestError,bestProx)
-            bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-            guess = round(charts.projectTestDay(history=history, weights=bias, today=date),2)
-            actual = round(round(float(window[date]),2), 2)
-            error = abs(actual-guess)
-            if error < bestError:
-                bestWeight = tests
-                bestError = error
-                bestProx = bestError*0.02
-            #print(trials, guess, actual, error, bestError, bestProx, bestWeight)
-            if error <= (actual*0.01)**1.5: break
-            trials += 1
+def updateBiases(sec: str, ind: str, bestWeight: list):
+    """Update both industry and sector CMAs in a thread-safe way."""
+    with biasLock:
+        secEntry = biases[sec]
+        # update industry
+        prevIndW, indCount = secEntry["industries"][ind]
+        newIndCount = indCount + 1
+        newIndW = [(prevIndW[j] * indCount + bestWeight[j]) / newIndCount for j in range(len(prevIndW))]
+        secEntry["industries"][ind] = (newIndW, newIndCount)
 
-        prevWeight, count = biases[sector]
-        #ema = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))]
-        cma = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))]
-        biases[sector] = [cma,count+1]
-        print(biases)
+        # update sector (aggregate)
+        prevSecW = secEntry["sectorWeights"]
+        secCount = secEntry["sectorCount"]
+        newSecCount = secCount + 1
+        newSecW = [(prevSecW[j] * secCount + bestWeight[j]) / newSecCount for j in range(len(prevSecW))]
+        secEntry["sectorWeights"] = newSecW
+        secEntry["sectorCount"] = newSecCount
 
-for s, val in biases.items():
-    print(f"{s}: {val}")
+def processSymbol(sym: str):
+    """Process a single symbol: fetch data, run per-day optimization, update biases."""
+    try:
+        print(sym)
+        stock = yf.Ticker(sym)
+        info = stock.info or {}
+        sec = info.get("sectorKey", info.get("quoteType", "Uncategorized")) or "Uncategorized"
+        ind = info.get("industryKey", "Unknown") or "Unknown"
+
+        # fetch history once
+        hist = stock.history(start=startDate, end=endDate, interval="1d")
+        if hist.empty:
+            print(f"no history for {sym}")
+            return
+
+        # training window (Close series)
+        try:
+            window = hist[ranges[0]:ranges[1]]["Close"]
+        except Exception:
+            window = hist["Close"].loc[ranges[0]:ranges[1]]
+
+        if window.empty:
+            print(f"no window for {sym}")
+            return
+
+        initBiasIfMissing(sec, ind)
+
+        # start from sector-level weights (thread-safe read)
+        with biasLock:
+            baseWeight = list(biases[sec]["sectorWeights"])
+
+        # iterate dates
+        for i, dt in enumerate(window.index):
+            # small guard: ensure dt is within hist index
+            if dt not in hist.index:
+                continue
+
+            bestWeight = list(baseWeight)
+            bestError = float("inf")
+            bestProx = 0.1
+            trials = 0
+
+            # prepare history slice for this date
+            # use iloc slicing for speed: find position
+            try:
+                pos = hist.index.get_loc(dt)
+            except KeyError:
+                continue
+            startPos = max(0, pos - 365)
+            windowSlice = hist.iloc[startPos:pos + 1]
+            if len(windowSlice) < 20:
+                continue
+
+            # inner optimization loop
+            while trials <= 30:
+                tests = distribute(bestWeight, bestError, bestProx)
+                biasDict = {
+                    90: [tests[0], "ME"],
+                    180: [tests[1], "ME"],
+                    365: [tests[2], "D"],
+                    730: [tests[3], "W"],
+                    1825: [tests[4], "YS"]
+                }
+                try:
+                    guess = charts.projectTestDay(history=windowSlice, weights=biasDict, today=dt)
+                    if guess is None:
+                        raise ValueError("prophet failed")
+                    guess = round(float(guess), 2)
+                except Exception:
+                    # if prophet fails, break and skip this date
+                    break
+
+                actual = round(float(window[dt]), 2)
+                err = abs(actual - guess)
+                if err < bestError:
+                    bestWeight = tests
+                    bestError = err
+                    bestProx = max(bestError * 0.02, 1e-6)
+                # early stop: relative threshold scaled by price
+                if actual > 0 and err <= math.pow(actual * 0.01, 1.5):
+                    break
+                trials += 1
+
+            # update biases with the bestWeight found for this date
+            updateBiases(sec, ind, bestWeight)
+
+    except Exception as e:
+        print(f"error {sym}: {e}")
+
+def main():
+    with ThreadPoolExecutor(max_workers=maxWorkers) as exe:
+        futures = [exe.submit(processSymbol, s) for s in symbols]
+        for fut in as_completed(futures):
+            try:
+                fut.result()
+            except Exception as e:
+                print("worker error:", e)
+
+    # print summary
+    for s, v in biases.items():
+        print(f"{s}: sectorW={v['sectorWeights']}, sectorCount={v['sectorCount']}")
+        for indName, (w, c) in v["industries"].items():
+            print(f"  {indName}: weights={w}, count={c}")
+
+if __name__ == "__main__":
+    main()
