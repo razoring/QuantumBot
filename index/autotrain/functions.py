@@ -191,16 +191,11 @@ class yFinanceWrapper:
         return "0%"
 
 class Charts:
-    def __init__(self, cache_max_items=512, cache_ttl=60*60*24):
-        # LRU cache: key -> (timestamp, trend_array)
-        self._prophet_cache = OrderedDict()
-        self._cache_lock = threading.Lock()
-        self._cache_max_items = cache_max_items
-        self._cache_ttl = cache_ttl  # seconds; set 0 to disable TTL
-
-        # optional: path to persist cache between runs
-        # self._cache_file = "prophet_cache.pkl"
-        # self._load_cache_from_disk()
+    def __init__(self): #ttl = time to live (before expiry)
+        self._cache = OrderedDict() # {1746164675.3231642:["D":0.2,"W":0.2,"M":0.2,"Y":0.2]}
+        self._thread = threading.Lock()
+        self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
+        self._capacity = 64
 
     def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
         prophetTrend = None
@@ -211,81 +206,54 @@ class Charts:
         histories = ast.literal_eval(histories.replace('"', "'")) if isinstance(histories, str) else histories
 
         for h, nested in histories.items():
-            start_date = lastDate - timedelta(days=h)
-            window = history[history.index > start_date]
+            startDate = lastDate - timedelta(days=h)
+            window = history[history.index > startDate]
             if len(window) < 20:
                 continue
 
-            # -----------------------------
-            # INLINE: BUILD CACHE KEY
-            # -----------------------------
-            close_series = window["Close"].copy()
-
-            m = hashlib.sha1()
-            m.update(str(len(close_series)).encode())
-            m.update(str(float(close_series.iloc[-1])).encode())
-            try:
-                m.update(close_series.values.tobytes())
-            except Exception:
-                m.update(close_series.to_string().encode())
+            close = window["Close"].copy()
 
             key = (
-                start_date.isoformat(),
+                startDate.isoformat(),
                 lastDate.isoformat(),
                 nested[1],
-                m.hexdigest()
+                tuple(close.values)
             )
 
-            # -----------------------------
-            # INLINE: CACHE GET (LRU + TTL)
-            # -----------------------------
             trend = None
-            with self._cache_lock:
-                item = self._prophet_cache.get(key)
+            with self._thread:
+                item = self._cache.get(key)
                 if item:
-                    ts, cached_value = item
+                    ts, cached = item
                     # TTL check
-                    if not self._cache_ttl or (time.time() - ts) <= self._cache_ttl:
+                    if not self._ttl or (time.time() - ts) <= self._ttl:
                         # valid cache hit
-                        self._prophet_cache.move_to_end(key)
-                        trend = cached_value
+                        self._cache.move_to_end(key)
+                        trend = cached
                     else:
                         # expired
-                        del self._prophet_cache[key]
+                        del self._cache[key]
 
-            # -----------------------------
-            # TRAIN PROPHET IF CACHE MISS
-            # -----------------------------
             if trend is None:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                mprophet = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=15, changepoint_prior_scale=0.05, changepoint_range=0.8)
-                mprophet.fit(data)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=15, changepoint_prior_scale=0.05, changepoint_range=0.8)
+                config.fit(data)
 
-                future = mprophet.make_future_dataframe(periods=forward, freq=nested[1])
-                fcst = mprophet.predict(future)
+                future = config.make_future_dataframe(periods=forward, freq=nested[1])
+                fcst = config.predict(future)
                 trend = fcst.tail(forward + 1)["yhat"].values
 
-                # -----------------------------
-                # INLINE: CACHE SET (LRU + EVICTION)
-                # -----------------------------
-                with self._cache_lock:
-                    self._prophet_cache[key] = (time.time(), trend)
-                    self._prophet_cache.move_to_end(key)
+                with self._thread:
+                    self._cache[key] = (time.time(), trend)
+                    self._cache.move_to_end(key)
 
                     # evict oldest if over capacity
-                    while len(self._prophet_cache) > self._cache_max_items:
-                        self._prophet_cache.popitem(last=False)
-
-            # -----------------------------
-            # OFFSET + WEIGHT (NOT CACHED)
-            # -----------------------------
+                    while len(self._cache) > self._capacity:
+                        self._cache.popitem(last=False)
             prophetSum.append((trend + curPrice - trend[0]) * nested[0])
 
-        # -----------------------------
-        # FINAL AGGREGATION
-        # -----------------------------
         if prophetSum:
             prophetTrend = np.sum(prophetSum, axis=0)
 
