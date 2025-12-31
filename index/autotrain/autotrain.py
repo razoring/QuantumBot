@@ -4,6 +4,7 @@ import pandas as pd
 import random
 import warnings
 import math
+import copy
 from datetime import datetime, timedelta
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
@@ -46,7 +47,7 @@ symbols = {
     "MARA", "RIOT", "MSTR", "GBTC"
     }
 
-symbols = {"NVDA", "META", "AMD"}
+symbols = {"NVDA", "MSFT", "AMD", "TSM"}
 
 #ranges = ["2023-01-01","2025-11-30"]
 ranges = ["2023-01-01","2023-01-6"]
@@ -73,7 +74,9 @@ for symbol in symbols:
     if history.empty: break
 
     if sector not in biases: biases[sector] = {"weight":[[0.2, 0.2, 0.2, 0.2, 0.2], 0], ind:[[0.2, 0.2, 0.2, 0.2, 0.2], 0]}
-    if ind not in biases[sector]: biases[sector][ind] = [biases[sector]["weight"][0].copy(), biases[sector]["weight"][1]]
+    if ind not in biases[sector]:
+        biases[sector][ind] = copy.deepcopy(biases[sector]["weight"])
+        biases[sector][ind][1] = 0
     
     bestWeight = biases[sector].get(ind)[0]
     for i, date in enumerate(window.index):
@@ -107,4 +110,4 @@ for symbol in symbols:
         biases[sector]["weight"] = [avgSect,countSect+1]
         
         print("best:", bestGuess, actual, error, bestError, bestProx, bestWeight)
-        print(biases)
+print(biases)

@@ -282,7 +282,6 @@ class Charts:
     def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
         # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
         prophetTrend = None
-        prophetSigma = 0
 
         histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
@@ -308,7 +307,7 @@ class Charts:
         if prophetSum:
             prophetTrend = np.sum(prophetSum, axis=0)
                 
-        return prophetTrend, prophetSigma
+        return prophetTrend
 
     def _setupFigure(self):
         plt.rc("font", size=10)
@@ -610,8 +609,6 @@ class Charts:
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
-        points = []
         prophetTrend = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        points = prophetTrend
-        return points[0][1]
+        return prophetTrend
