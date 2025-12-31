@@ -262,7 +262,7 @@ class Charts:
             data.columns = ["ds", "y"]
             data["ds"] = data["ds"].dt.tz_localize(None)
 
-            m = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True)
+            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=15, changepoint_prior_scale=0.05, changepoint_range=0.8)
             m.fit(data)
             
             future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
@@ -459,7 +459,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="1mo") if model == 0 else stock.history(period="5y", interval="1d")
+        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1d")
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
@@ -470,8 +470,8 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        histories = {90: [0.04898536868836203, "W"], 365: [0.5872746791180823, "D"], 730: [0.08848503900838377, "W"], 1095: [0.21615744671675696, "ME"], 1825: [0.05909746646841502, "YS"]}
-        prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories)
+        histories = {90: [0.0642406208065841, "W"], 365: [0.11414014000113692, "D"], 730: [0.3367151092789515, "W"], 1095: [0.14200122056857792, "ME"], 1825: [0.3429029093447487, "YS"]}#[0.3132857106148712, 0.5816743632293431, 0.06080983836628976, 0.0009932806152497136, 0.04323680717424627]
+        prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
