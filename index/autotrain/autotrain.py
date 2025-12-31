@@ -1,3 +1,20 @@
+import yfinance as yf
+import functions as functions
+import pandas as pd
+import random
+import warnings
+import math
+from datetime import datetime, timedelta
+# loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+charts = functions.Charts()
+
+def distribute(values:list, error:float, proximity:float):
+    offset = error*proximity+0.1*random.random()
+    nudged = [max(v+random.uniform(-offset,offset), 0.001) for v in values]
+    return [float(v/sum(nudged)) for v in nudged]
+
 symbols = {
     # Mega Cap Tech
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
@@ -29,41 +46,36 @@ symbols = {
     "MARA", "RIOT", "MSTR", "GBTC"
     }
 
-import yfinance as yf
-import functions as functions
-import pandas as pd
-import random
-import warnings
-import math
-from datetime import datetime, timedelta
-# loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
+symbols = {"NVDA", "META", "AMD"}
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-charts = functions.Charts()
-
-def distribute(values:list, error:float, proximity:float):
-    offset = error*proximity+0.1*random.random()
-    nudged = [max(v+random.uniform(-offset,offset), 0.001) for v in values]
-    return [float(v/sum(nudged)) for v in nudged]
-
-ranges = ["2023-01-01","2025-11-30"]
+#ranges = ["2023-01-01","2025-11-30"]
+ranges = ["2023-01-01","2023-01-6"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
+
+"""
+biases: {
+    "technology": {
+        "weight": [[0.2, 0.2, 0.2, 0.2, 0.2], 0],
+        "semiconductors": [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+    },
+}
+"""
 
 biases:dict[str,list] = {}
 for symbol in symbols:
     print(symbol)
     stock = yf.Ticker(symbol)
     info = stock.info
-    sector = info.get("sectorKey", info.get("quoteType", "Uncategorized"))
+    sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+    ind = yf.Industry(info.get("industryKey")).name.lower()
     history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=365), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
     window = history[ranges[0]:ranges[1]]["Close"] #training window
     if history.empty: break
 
-    if sector not in biases:
-        biases[sector] = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+    if sector not in biases: biases[sector] = {"weight":[[0.2, 0.2, 0.2, 0.2, 0.2], 0], ind:[[0.2, 0.2, 0.2, 0.2, 0.2], 0]}
+    if ind not in biases[sector]: biases[sector][ind] = biases[sector].get("weight")
     
-    bestWeight = biases[sector][0]
-
+    bestWeight = biases[sector].get(ind)[0]
     for i, date in enumerate(window.index):
         print(date)
         bestError = 9999.0
@@ -86,12 +98,13 @@ for symbol in symbols:
             if error <= max(0.04*math.log10(actual),0.001): break # short-circut, early exit
             trials += 1
 
-        prevWeight, count = biases[sector]
-        avg = [prevWeight[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevWeight))] #ema
+        prevInd, countInd = biases[sector][ind]
+        prevSect, countSect = biases[sector]["weight"]
         #avg = [(prevWeight[j]*count+bestWeight[j])/(count + 1) for j in range(len(prevWeight))] #cma
-        biases[sector] = [avg,count+1]
+        avgInd = [prevInd[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevInd))] #ema
+        avgSect = [prevSect[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevSect))] #ema
+        biases[sector][ind] = [avgInd,countInd+1]
+        biases[sector]["weight"] = [avgSect,countSect+1]
+        
         print("best:", bestGuess, actual, error, bestError, bestProx, bestWeight)
         print(biases)
-
-for s, val in biases.items():
-    print(f"{s}: {val}")
