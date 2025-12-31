@@ -66,7 +66,7 @@ for symbol in symbols:
     stock = yf.Ticker(symbol)
     info = stock.info
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-    ind = yf.Industry(info.get("industryKey")).name.lower()
+    ind = yf.Industry(info.get("industryKey")).name.lower() if type(info.get("industryKey")) != None else "unknown"
     history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=365), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
     window = history[ranges[0]:ranges[1]]["Close"] #training window
     if history.empty: break
