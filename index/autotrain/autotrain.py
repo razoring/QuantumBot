@@ -51,7 +51,7 @@ symbols = {
 symbols = {"NVDA"}
 
 #ranges = ["2023-01-01","2025-11-30"]
-ranges = ["2023-01-01","2025-12-30"]
+ranges = ["2025-01-01","2025-12-30"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
 
 """
@@ -111,4 +111,6 @@ for symbol in symbols:
         biases[sector]["weight"] = [avgSect,countSect+1]
         
         print("best:", bestGuess, actual, error, bestError, bestProx, bestWeight)
-print(json.dumps(biases))
+
+weights = open("index/weights.txt","w")
+weights.write(f"// {datetime.today().date()} \n"+json.dumps(biases))
