@@ -1,3 +1,4 @@
+import hashlib
 import io
 import logging
 import numpy as np
@@ -6,20 +7,21 @@ import yfinance as yf
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.ticker import FormatStrFormatter
+from matplotlib.patches import Polygon
 from matplotlib.colors import LinearSegmentedColormap, to_rgba
-from matplotlib.lines import Line2D
-from matplotlib.patches import Patch
 from scipy.interpolate import CubicSpline
 from scipy.stats import norm
 from datetime import datetime, timedelta
+import time
 from prophet import Prophet as ph
 from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import sys as themes #to suppress warnings
 import requests
 import ast
+from collections import OrderedDict
+import threading
 
 #Setup
 matplotlib.use("Agg")
@@ -189,8 +191,17 @@ class yFinanceWrapper:
         return "0%"
 
 class Charts:
-    def __init__(self):
-        pass
+    def __init__(self, cache_max_items=512, cache_ttl=60*60*24):
+        # LRU cache: key -> (timestamp, trend_array)
+        self._prophet_cache = OrderedDict()
+        self._cache_lock = threading.Lock()
+        self._cache_max_items = cache_max_items
+        self._cache_ttl = cache_ttl  # seconds; set 0 to disable TTL
+
+        # optional: path to persist cache between runs
+        # self._cache_file = "prophet_cache.pkl"
+        # self._load_cache_from_disk()
+
 
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -280,34 +291,99 @@ class Charts:
         return prophetTrend, prophetSigma
     
     def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
-        # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
         prophetTrend = None
-
-        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
+        prophetSigma = 0
         prophetSum = []
-        
+
+        # ensure histories is a dict
+        histories = ast.literal_eval(histories.replace('"', "'")) if isinstance(histories, str) else histories
+
         for h, nested in histories.items():
             start_date = lastDate - timedelta(days=h)
-            data = history[history.index > start_date].reset_index()[["Date", "Close"]]
-            if len(data) < 20: continue
+            window = history[history.index > start_date]
+            if len(window) < 20:
+                continue
 
-            data.columns = ["ds", "y"]
-            data["ds"] = data["ds"].dt.tz_localize(None)
+            # -----------------------------
+            # INLINE: BUILD CACHE KEY
+            # -----------------------------
+            close_series = window["Close"].copy()
 
-            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.05) #underfit > increase, overfit > decrease; d: 0.05
-            m.fit(data)
-            
-            future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
-            fcst = m.predict(future)
-            
-            trend = fcst.tail(forward + 1)["yhat"].values
-            #Offset to align with current price
+            m = hashlib.sha1()
+            m.update(str(len(close_series)).encode())
+            m.update(str(float(close_series.iloc[-1])).encode())
+            try:
+                m.update(close_series.values.tobytes())
+            except Exception:
+                m.update(close_series.to_string().encode())
+
+            key = (
+                start_date.isoformat(),
+                lastDate.isoformat(),
+                nested[1],
+                m.hexdigest()
+            )
+
+            # -----------------------------
+            # INLINE: CACHE GET (LRU + TTL)
+            # -----------------------------
+            trend = None
+            with self._cache_lock:
+                item = self._prophet_cache.get(key)
+                if item:
+                    ts, cached_value = item
+                    # TTL check
+                    if not self._cache_ttl or (time.time() - ts) <= self._cache_ttl:
+                        # valid cache hit
+                        self._prophet_cache.move_to_end(key)
+                        trend = cached_value
+                    else:
+                        # expired
+                        del self._prophet_cache[key]
+
+            # -----------------------------
+            # TRAIN PROPHET IF CACHE MISS
+            # -----------------------------
+            if trend is None:
+                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+                data["ds"] = data["ds"].dt.tz_localize(None)
+
+                mprophet = ph(
+                    daily_seasonality=False,
+                    yearly_seasonality=True,
+                    weekly_seasonality=True,
+                    n_changepoints=10
+                )
+                mprophet.fit(data)
+
+                future = mprophet.make_future_dataframe(periods=forward, freq=nested[1])
+                fcst = mprophet.predict(future)
+                trend = fcst.tail(forward + 1)["yhat"].values
+
+                # -----------------------------
+                # INLINE: CACHE SET (LRU + EVICTION)
+                # -----------------------------
+                with self._cache_lock:
+                    self._prophet_cache[key] = (time.time(), trend)
+                    self._prophet_cache.move_to_end(key)
+
+                    # evict oldest if over capacity
+                    while len(self._prophet_cache) > self._cache_max_items:
+                        self._prophet_cache.popitem(last=False)
+
+            # -----------------------------
+            # OFFSET + WEIGHT (NOT CACHED)
+            # -----------------------------
             prophetSum.append((trend + curPrice - trend[0]) * nested[0])
-        
+
+        # -----------------------------
+        # FINAL AGGREGATION
+        # -----------------------------
         if prophetSum:
             prophetTrend = np.sum(prophetSum, axis=0)
-                
-        return prophetTrend
+
+        return prophetTrend, prophetSigma
+
 
     def _setupFigure(self):
         plt.rc("font", size=10)
@@ -609,6 +685,8 @@ class Charts:
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
+        points = []
         prophetTrend = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        return prophetTrend
+        points = prophetTrend
+        return points[0][1]
