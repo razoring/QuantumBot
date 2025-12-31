@@ -1,3 +1,4 @@
+import json
 import yfinance as yf
 import functions as functions
 import pandas as pd
@@ -47,8 +48,10 @@ symbols = {
     "MARA", "RIOT", "MSTR", "GBTC"
     }
 
+symbols = {"NVDA"}
+
 #ranges = ["2023-01-01","2025-11-30"]
-ranges = ["2023-01-01","2023-01-6"]
+ranges = ["2023-01-01","2025-12-30"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
 
 """
@@ -66,7 +69,7 @@ for symbol in symbols:
     stock = yf.Ticker(symbol)
     info = stock.info
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-    ind = yf.Industry(info.get("industryKey")).name.lower() if type(info.get("industryKey")) != None else "unknown"
+    ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
     history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=365), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
     window = history[ranges[0]:ranges[1]]["Close"] #training window
     if history.empty: break
@@ -108,4 +111,4 @@ for symbol in symbols:
         biases[sector]["weight"] = [avgSect,countSect+1]
         
         print("best:", bestGuess, actual, error, bestError, bestProx, bestWeight)
-print(biases)
+print(json.dumps(biases))
