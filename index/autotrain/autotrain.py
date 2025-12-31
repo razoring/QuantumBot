@@ -73,7 +73,7 @@ for symbol in symbols:
     if history.empty: break
 
     if sector not in biases: biases[sector] = {"weight":[[0.2, 0.2, 0.2, 0.2, 0.2], 0], ind:[[0.2, 0.2, 0.2, 0.2, 0.2], 0]}
-    if ind not in biases[sector]: biases[sector][ind] = biases[sector].get("weight")
+    if ind not in biases[sector]: biases[sector][ind] = [biases[sector]["weight"][0].copy(), biases[sector]["weight"][1]]
     
     bestWeight = biases[sector].get(ind)[0]
     for i, date in enumerate(window.index):
