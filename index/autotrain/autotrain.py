@@ -47,8 +47,6 @@ symbols = {
     "MARA", "RIOT", "MSTR", "GBTC"
     }
 
-symbols = {"NVDA", "MSFT", "AMD", "TSM"}
-
 #ranges = ["2023-01-01","2025-11-30"]
 ranges = ["2023-01-01","2023-01-6"]
 dates = pd.date_range(start=ranges[0], end=ranges[1])
