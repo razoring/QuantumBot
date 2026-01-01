@@ -1,3 +1,4 @@
+For detailed support, join the [support server](https://discord.gg/2sMTnQrKhS).
 ## Tickers:
 Returns top tickers across discord or checks whether your ticker is valid.
 ```/tickers <action> <ticker?>```

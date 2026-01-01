@@ -132,4 +132,4 @@ for symbol in symbols:
         print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
 
 weights = open("index/weights.txt","w")
-weights.write(f"// {started}:{datetime.now()} ({datetime.now()-started}) \n"+json.dumps(biases))
+weights.write(json.dumps(biases)+f"\n// {started}:{datetime.now()} ({datetime.now()-started})")

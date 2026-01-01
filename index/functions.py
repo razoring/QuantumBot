@@ -1,5 +1,6 @@
 from collections import OrderedDict
 import io
+import json
 import logging
 import threading
 import time
@@ -195,54 +196,6 @@ class Charts:
         self._thread = threading.Lock()
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
-
-    def getBatchForecasts(self, history, configs, today):
-        today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
-        if today not in history.index:
-            locs = history.index.get_indexer([today], method='pad')
-            if locs[0] == -1: return None
-            lastDate = history.index[locs[0]]
-        else:
-            lastDate = today
-
-        curPrice = history.loc[lastDate]["Close"]
-        results = []
-        
-        # Iterate through configs: {horizon: [weight, freq]}
-        for h, settings in configs.items():
-            startDate = lastDate - timedelta(days=int(h))
-            window = history[(history.index > startDate) & (history.index <= lastDate)]
-            
-            if len(window) < 20:
-                results.append(np.full(91, curPrice))
-                continue
-            
-            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]))
-            with self._thread:
-                cached = self._cache.get(key)
-            
-            if cached is not None:
-                curve = cached
-            else:
-                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
-                data["ds"] = data["ds"].dt.tz_localize(None)
-
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8)
-                
-                try:
-                    config.fit(data)
-                    future = config.make_future_dataframe(periods=91, freq='D') 
-                    fcst = config.predict(future)
-                    
-                    rawTrend = fcst.tail(91)["yhat"].values
-                    curve = rawTrend + curPrice - rawTrend[0]
-                except Exception:
-                    curve = np.full(91, curPrice)
-
-                with self._thread:
-                    self._cache[key] = curve
-            results.append(curve)
-        return np.vstack(results)
 
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -441,7 +394,7 @@ class Charts:
         maxY = history["High"].max()
         lastPrice = history["Close"].iloc[-1]
 
-        def format_date(x, pos=None):
+        def formatDate(x, pos=None):
             idx = int(x)
             if 0 <= idx < len(history):
                 date_val = history.index[idx]
@@ -457,7 +410,7 @@ class Charts:
                     return date_val.strftime("%Y")
             return ""
 
-        ax1.xaxis.set_major_formatter(FuncFormatter(format_date))
+        ax1.xaxis.set_major_formatter(FuncFormatter(formatDate))
         ax1.xaxis.set_major_locator(MaxNLocator(nbins=10))
         ax1.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark)
         
@@ -478,6 +431,65 @@ class Charts:
 
         chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
+
+    def getBatchForecasts(self, history, configs, today):
+        today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
+        if today not in history.index:
+            locs = history.index.get_indexer([today], method='pad')
+            if locs[0] == -1: return None
+            lastDate = history.index[locs[0]]
+        else:
+            lastDate = today
+
+        curPrice = history.loc[lastDate]["Close"]
+        results = []
+        
+        # Iterate through configs: {horizon: [weight, freq]}
+        for h, settings in configs.items():
+            startDate = lastDate - timedelta(days=int(h))
+            window = history[(history.index > startDate) & (history.index <= lastDate)]
+            
+            if len(window) < 20:
+                results.append(np.full(91, curPrice))
+                continue
+            
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]))
+            with self._thread:
+                cached = self._cache.get(key)
+            
+            if cached is not None:
+                curve = cached
+            else:
+                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+                data["ds"] = data["ds"].dt.tz_localize(None)
+
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=5000)
+                
+                try:
+                    config.fit(data)
+                    future = config.make_future_dataframe(periods=91, freq='D') 
+                    fcst = config.predict(future)
+                    
+                    rawTrend = fcst.tail(91)["yhat"].values
+                    curve = rawTrend + curPrice - rawTrend[0]
+                except Exception:
+                    curve = np.full(91, curPrice)
+
+                with self._thread:
+                    self._cache[key] = curve
+            results.append(curve)
+        return np.vstack(results)
+    
+    def projectTestDay(self, history, weights, today): #period given in days
+        today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
+        window = history[(history.index >= today - timedelta(days=730)) & (history.index <= today)]
+
+        curPrice = window["Close"].iloc[-1]
+        lastDate = window.index[-1]
+        
+        prophetTrend,_ = self._prophetInit(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        if prophetTrend is None: raise ValueError("Prophet generation failed")
+        return prophetTrend[1]
     
     def _prophetInit(self, history, lastDate, curPrice, histories, forward=90):
         prophetTrend = None
@@ -555,8 +567,11 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        #0.022983870159921375, 0.2834184138206861, 0.43193292284343987, 0.12013663547014312, 0.14152815776372363
-        histories = {90: [0.022983870159921375, "W"], 365: [0.2834184138206861, "D"], 730: [0.43193292284343987, "W"], 1095: [0.12013663547014312, "ME"], 1825: [0.14152815776372363, "YS"]} #HARDCODED FOR TESTING 
+        with open("index\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
+        info = stock.info
+        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
+        histories = {90: [biases[sector][ind][0][0], "W"], 365: [biases[sector][ind][0][1], "D"], 730: [biases[sector][ind][0][2], "W"], 1095: [biases[sector][ind][0][3], "ME"], 1825: [biases[sector][ind][0][4], "YS"]} #HARDCODED FOR TESTING 
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:
