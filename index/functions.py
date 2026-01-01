@@ -459,7 +459,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1d")
+        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1wk")
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
@@ -470,8 +470,8 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        #0.011324147285345303, 0.1249793852867192, 0.25379889716871445, 0.45864155170204024, 0.15125602045781694
-        histories = {90: [0.011324147285345303, "W"], 365: [0.1249793852867192, "D"], 730: [0.25379889716871445, "W"], 1095: [0.45864155170204024, "ME"], 1825: [0.15125602045781694, "YS"]} #HARDCODED FOR TESTING 
+        #0.05290721736165216, 0.2524642627740606, 0.38254438358501086, 0.15980769075758453, 0.1522764455313957
+        histories = {90: [0.05290721736165216, "W"], 365: [0.2524642627740606, "D"], 730: [0.38254438358501086, "W"], 1095: [0.15980769075758453, "ME"], 1825: [0.1522764455313957, "YS"]} #HARDCODED FOR TESTING 
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:

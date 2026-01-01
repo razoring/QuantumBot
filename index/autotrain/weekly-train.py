@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
+with warnings.catch_warnings(): warnings.filterwarnings("ignore", category=RuntimeWarning)
 charts = functions.Charts()
 
 symbols = {
@@ -48,7 +49,7 @@ symbols = {
 symbols = {"AMD"}
 
 #ranges = ["2023-01-01","2025-11-30"]
-ranges = ["2023-12-31","2025-12-31"]
+ranges = ["2023-12-31","2024-12-31"]
 
 """
 biases: {
@@ -105,20 +106,12 @@ for symbol in symbols:
             return np.mean(diff)
 
         cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-        
-        # FIX 1: Allow weights to reach 0.0. 
-        # This stops the optimizer from "bumping" against the 0.01 wall and triggering warnings.
         bnds = tuple((0.0, 1.0) for _ in range(5))
-        
-        # FIX 2: Normalize the initial guess ensures it is valid before starting
         initGuess = np.array(biases[sector].get(ind)[0])
         initGuess = initGuess / np.sum(initGuess)
 
-        # Optional: Suppress benign warnings if they persist (e.g., during line search)
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=RuntimeWarning)
-            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
         
+        res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
         bestWeight = res.x.tolist()
         bestError = res.fun
         
@@ -128,8 +121,10 @@ for symbol in symbols:
 
         prevInd, countInd = biases[sector][ind]
         prevSect, countSect = biases[sector]["weight"]
-        #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0)
-        adjustment = 0.001/(bestError+0.02)+0.03
+        #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal weighting
+        #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
+        adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
+        #adjustment = 0.05 #equal
         avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
         avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
         biases[sector][ind] = [avgInd,countInd+1]
