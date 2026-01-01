@@ -238,7 +238,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=15, changepoint_prior_scale=0.05, changepoint_range=0.8)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=25, changepoint_prior_scale=0.05, changepoint_range=0.8)
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
