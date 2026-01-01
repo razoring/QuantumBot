@@ -49,7 +49,8 @@ symbols = {
 symbols = {"AMD"}
 
 #ranges = ["2023-01-01","2025-11-30"]
-ranges = ["2023-12-31","2024-12-31"]
+train = ["2023-12-31","2024-12-31"]
+validation = ["2024-01-01","2025-12-31"]
 
 """
 biases: {
@@ -67,8 +68,8 @@ for symbol in symbols:
     info = stock.info
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
     ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
-    history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
-    window = history[ranges[0]:ranges[1]]["Close"].dropna()
+    history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(train[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
+    window = history[train[0]:train[1]]["Close"].dropna()
     daily = window.resample("D").interpolate()
     origins = window.resample("W-FRI").last().dropna()
     if history.empty: break
