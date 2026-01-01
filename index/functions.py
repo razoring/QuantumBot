@@ -1,5 +1,8 @@
+from collections import OrderedDict
 import io
 import logging
+import threading
+import time
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -187,8 +190,59 @@ class yFinanceWrapper:
         return "0%"
 
 class Charts:
-    def __init__(self):
-        pass
+    def __init__(self): #ttl = time to live (before expiry)
+        self._cache = OrderedDict() # {1746164675.3231642:["D":0.2,"W":0.2,"M":0.2,"Y":0.2]}
+        self._thread = threading.Lock()
+        self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
+        self._capacity = 64
+
+    def getBatchForecasts(self, history, configs, today):
+        today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
+        if today not in history.index:
+            locs = history.index.get_indexer([today], method='pad')
+            if locs[0] == -1: return None
+            lastDate = history.index[locs[0]]
+        else:
+            lastDate = today
+
+        curPrice = history.loc[lastDate]["Close"]
+        results = []
+        
+        # Iterate through configs: {horizon: [weight, freq]}
+        for h, settings in configs.items():
+            startDate = lastDate - timedelta(days=int(h))
+            window = history[(history.index > startDate) & (history.index <= lastDate)]
+            
+            if len(window) < 20:
+                results.append(np.full(91, curPrice))
+                continue
+            
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]))
+            with self._thread:
+                cached = self._cache.get(key)
+            
+            if cached is not None:
+                curve = cached
+            else:
+                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+                data["ds"] = data["ds"].dt.tz_localize(None)
+
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8)
+                
+                try:
+                    config.fit(data)
+                    future = config.make_future_dataframe(periods=91, freq='D') 
+                    fcst = config.predict(future)
+                    
+                    rawTrend = fcst.tail(91)["yhat"].values
+                    curve = rawTrend + curPrice - rawTrend[0]
+                except Exception:
+                    curve = np.full(91, curPrice)
+
+                with self._thread:
+                    self._cache[key] = curve
+            results.append(curve)
+        return np.vstack(results)
 
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -426,34 +480,65 @@ class Charts:
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
     
     def _prophetInit(self, history, lastDate, curPrice, histories, forward=90):
-        # {30: [0.25, "D"], 365: [0.25, "W"], 730: [0.2, "ME"], 1095: [0.2, "ME"], 1825: [0.05, "YE"]} # days: [weight, freq] #weights must be = 1
         prophetTrend = None
         prophetSigma = 0
-
-        histories = ast.literal_eval(histories.replace('"', "'")) if type(histories) == str else histories # use literal eval to convert, must have " as '
         prophetSum = []
-            
+
+        # ensure histories is a dict
+        histories = ast.literal_eval(histories.replace('"', "'")) if isinstance(histories, str) else histories
+
         for h, nested in histories.items():
-            start_date = lastDate - timedelta(days=h)
-            data = history[history.index > start_date].reset_index()[["Date", "Close"]]
-            if len(data) < 20: continue
+            startDate = lastDate - timedelta(days=h)
+            window = history[history.index > startDate]
+            if len(window) < 20:
+                continue
 
-            data.columns = ["ds", "y"]
-            data["ds"] = data["ds"].dt.tz_localize(None)
+            close = window["Close"].copy()
 
-            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8)
-            m.fit(data)
-            
-            future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
-            fcst = m.predict(future)
-            
-            trend = fcst.tail(forward + 1)["yhat"].values
-            #Offset to align with current price
+            key = (
+                startDate.isoformat(),
+                lastDate.isoformat(),
+                nested[1],
+                tuple(close.values)
+            )
+
+            trend = None
+            with self._thread:
+                item = self._cache.get(key)
+                if item:
+                    ts, cached = item
+                    # TTL check
+                    if not self._ttl or (time.time() - ts) <= self._ttl:
+                        # valid cache hit
+                        self._cache.move_to_end(key)
+                        trend = cached
+                    else:
+                        # expired
+                        del self._cache[key]
+
+            if trend is None:
+                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+                data["ds"] = data["ds"].dt.tz_localize(None)
+
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=5000) # cpps = 0.05
+                config.fit(data)
+
+                future = config.make_future_dataframe(periods=forward, freq=nested[1])
+                fcst = config.predict(future)
+                trend = fcst.tail(forward + 1)["yhat"].values
+
+                with self._thread:
+                    self._cache[key] = (time.time(), trend)
+                    self._cache.move_to_end(key)
+
+                    # evict oldest if over capacity
+                    while len(self._cache) > self._capacity:
+                        self._cache.popitem(last=False)
             prophetSum.append((trend + curPrice - trend[0]) * nested[0])
-        
+
         if prophetSum:
             prophetTrend = np.sum(prophetSum, axis=0)
-                
+
         return prophetTrend, prophetSigma
     
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
@@ -470,8 +555,8 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        #0.05290721736165216, 0.2524642627740606, 0.38254438358501086, 0.15980769075758453, 0.1522764455313957
-        histories = {90: [0.05290721736165216, "W"], 365: [0.2524642627740606, "D"], 730: [0.38254438358501086, "W"], 1095: [0.15980769075758453, "ME"], 1825: [0.1522764455313957, "YS"]} #HARDCODED FOR TESTING 
+        #0.022983870159921375, 0.2834184138206861, 0.43193292284343987, 0.12013663547014312, 0.14152815776372363
+        histories = {90: [0.022983870159921375, "W"], 365: [0.2834184138206861, "D"], 730: [0.43193292284343987, "W"], 1095: [0.12013663547014312, "ME"], 1825: [0.14152815776372363, "YS"]} #HARDCODED FOR TESTING 
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:

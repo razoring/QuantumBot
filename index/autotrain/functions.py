@@ -1,4 +1,4 @@
-# functions.py
+#backtesting
 import hashlib
 import io
 import logging
@@ -132,64 +132,78 @@ class Charts:
     def getBatchForecasts(self, history, configs, today):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
         
-        # 1. Establish the absolute end date (last known data point)
-        # We assume history is sorted.
+        # Validate data existence
         if today not in history.index:
-            # Fallback to nearest previous date if 'today' is a weekend/holiday
             locs = history.index.get_indexer([today], method='pad')
             if locs[0] == -1: return None
             lastDate = history.index[locs[0]]
         else:
             lastDate = today
 
+        # Get current price for alignment logic (Production parity)
+        curPrice = history.loc[lastDate]["Close"]
         results = []
         
+        # Iterate through configs: {horizon: [weight, freq]}
         for h, settings in configs.items():
-            freq = settings[1]
-            
-            # --- CRITICAL FIX START ---
-            # Slice the window distinctively for EACH horizon (h)
-            # This ensures the 90-day model differs from the 730-day model
+            # 1. Horizon-specific Slicing (Production logic)
             startDate = lastDate - timedelta(days=int(h))
             window = history[(history.index > startDate) & (history.index <= lastDate)]
             
-            # Skip if insufficient data for this specific horizon
             if len(window) < 20: 
-                results.append(np.zeros(91)) # Or handle gracefully
+                # Fallback: Flat line at current price if insufficient data
+                results.append(np.full(91, curPrice))
                 continue
-            # --- CRITICAL FIX END ---
 
-            # Create data for Prophet
-            data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
-            data["ds"] = data["ds"].dt.tz_localize(None)
-            
-            # Optimization: Unique cache key includes the horizon 'h' and start date
-            key = (lastDate.isoformat(), h, freq, window["Close"].iloc[-1])
+            # 2. Caching Strategy
+            # Key includes horizon 'h' and lastDate to ensure distinct models
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:])) # Hash last 5 prices for speed
 
             with self._thread:
                 cached = self._cache.get(key)
             
-            # If we need to refit (simplified logic for brevity)
-            if cached is None:
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True)
+            if cached is not None:
+                curve = cached
+            else:
+                data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+                data["ds"] = data["ds"].dt.tz_localize(None)
+
+                # 3. Production Hyperparameters
+                config = ph(
+                    daily_seasonality=False, 
+                    yearly_seasonality=True, 
+                    weekly_seasonality=True, 
+                    n_changepoints=50, 
+                    changepoint_prior_scale=0.5, 
+                    changepoint_range=0.8
+                )
+                
                 try:
                     config.fit(data)
-                    future = config.make_future_dataframe(periods=91)
+                    # Force 'D' freq for backtesting optimization granularity
+                    # even if production uses 'W', we need daily points to minimize error against daily history
+                    future = config.make_future_dataframe(periods=91, freq='D') 
                     fcst = config.predict(future)
-                    curve = fcst.tail(91)["yhat"].values
+                    
+                    # Get raw trend
+                    rawTrend = fcst.tail(91)["yhat"].values
+                    
+                    # 4. Alignment Logic (Critical Production Parity)
+                    # Align start of curve to current price
+                    curve = rawTrend + curPrice - rawTrend[0]
+                    
                 except Exception:
-                    curve = np.full(91, window["Close"].iloc[-1]) # Fallback flat line
-                
+                    curve = np.full(91, curPrice)
+
                 with self._thread:
                     self._cache[key] = curve
-            else:
-                curve = cached
 
             results.append(curve)
 
+        # Returns shape (NumConfigs, 91)
         return np.vstack(results)
 
-    def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
+    def _prophetInit(self, history, lastDate, curPrice, histories, forward=90):
         prophetTrend = None
         prophetSigma = 0
         prophetSum = []
@@ -230,7 +244,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=200) # cpps = 0.05
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=5000) # cpps = 0.05
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
@@ -258,7 +272,7 @@ class Charts:
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
-        prophetTrend,_ = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        prophetTrend,_ = self._prophetInit(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         return prophetTrend[1]
     
@@ -269,7 +283,7 @@ class Charts:
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
-        prophetTrend,_ = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=90)
+        prophetTrend,_ = self._prophetInit(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=90)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
         median = prophetTrend.copy()
         median = np.maximum(median, 0.01)
