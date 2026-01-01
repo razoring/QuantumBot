@@ -30,75 +30,6 @@ logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled = True
 set_default_font(load_google_font("Montserrat", weight="bold"))
 
-class Stamp:
-    def __init__(self, name, url, icon):
-        self.serverName = name
-        self.serverInvite = str(url)
-        self.serverIcon = icon
-
-    def _font(self, size: int):
-        return ImageFont.truetype(font="index/assets/Montserrat-Bold.ttf", size=size)
-
-    def _rounded(self, image: Image.Image, radius: int) -> Image.Image:
-        image = image.convert("RGBA")
-        mask = Image.new("L", image.size, 0)
-        draw = ImageDraw.Draw(mask)
-        draw.rounded_rectangle([(0, 0), image.size], radius=radius, fill=255)
-        rounded = Image.new("RGBA", image.size)
-        rounded.paste(image, (0, 0), mask=mask)
-        return rounded
-
-    def image(self, chart, displayLegend=True):
-        if displayLegend:
-            main = Image.open("index/assets/predict.png").convert("RGBA")
-        else:
-            main = Image.open("index/assets/chart.png").convert("RGBA")
-        legend = Image.open("index/assets/legend.png").convert("RGBA")
-        chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
-
-        img = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
-        # serverIcon may be a URL (string), a local path, or a file-like object.
-        try:
-            if isinstance(self.serverIcon, str) and self.serverIcon.startswith("http"):
-                resp = requests.get(self.serverIcon, timeout=5)
-                resp.raise_for_status()
-                serverIcon = Image.open(io.BytesIO(resp.content)).convert("RGBA").resize((93, 93))
-            elif hasattr(self.serverIcon, "read"):
-                # file-like object (BytesIO etc.)
-                try:
-                    self.serverIcon.seek(0)
-                except Exception:
-                    pass
-                serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
-            else:
-                serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
-        except Exception:
-            # fallback to bundled placeholder icon
-            try:
-                serverIcon = Image.open("index/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
-            except Exception:
-                # last-resort: create a blank icon
-                serverIcon = Image.new("RGBA", (93, 93), (112, 128, 144, 255))
-
-        #Compositing
-        img.paste(chartImg, (50, 250), mask=chartImg)
-        img.paste(serverIcon, (1045, 76), serverIcon)
-        if displayLegend:
-            blur = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.GaussianBlur(8))
-            blurred = self._rounded(blur, 24)
-            img.paste(blurred, (68, 269), mask=blurred)
-            img.paste(legend, (24, 224), legend)
-        img.paste(main, (0, 0), main)
-
-        canvas = ImageDraw.Draw(im=img)
-        canvas.text(xy=(1153, 75), text=self.serverName, font=self._font(48), fill="white")
-        canvas.text(xy=(1153, 135), text=self.serverInvite.replace("https://", ""), font=self._font(28), fill=(112, 128, 144))
-
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        buf.seek(0)
-        return buf
-
 class Humanizer:
     @staticmethod
     def suffix(number):
@@ -198,6 +129,66 @@ class Charts:
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
 
+    def getBatchForecasts(self, history, configs, today):
+        today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
+        
+        # 1. Establish the absolute end date (last known data point)
+        # We assume history is sorted.
+        if today not in history.index:
+            # Fallback to nearest previous date if 'today' is a weekend/holiday
+            locs = history.index.get_indexer([today], method='pad')
+            if locs[0] == -1: return None
+            lastDate = history.index[locs[0]]
+        else:
+            lastDate = today
+
+        results = []
+        
+        for h, settings in configs.items():
+            freq = settings[1]
+            
+            # --- CRITICAL FIX START ---
+            # Slice the window distinctively for EACH horizon (h)
+            # This ensures the 90-day model differs from the 730-day model
+            startDate = lastDate - timedelta(days=int(h))
+            window = history[(history.index > startDate) & (history.index <= lastDate)]
+            
+            # Skip if insufficient data for this specific horizon
+            if len(window) < 20: 
+                results.append(np.zeros(91)) # Or handle gracefully
+                continue
+            # --- CRITICAL FIX END ---
+
+            # Create data for Prophet
+            data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
+            data["ds"] = data["ds"].dt.tz_localize(None)
+            
+            # Optimization: Unique cache key includes the horizon 'h' and start date
+            key = (lastDate.isoformat(), h, freq, window["Close"].iloc[-1])
+
+            with self._thread:
+                cached = self._cache.get(key)
+            
+            # If we need to refit (simplified logic for brevity)
+            if cached is None:
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True)
+                try:
+                    config.fit(data)
+                    future = config.make_future_dataframe(periods=91)
+                    fcst = config.predict(future)
+                    curve = fcst.tail(91)["yhat"].values
+                except Exception:
+                    curve = np.full(91, window["Close"].iloc[-1]) # Fallback flat line
+                
+                with self._thread:
+                    self._cache[key] = curve
+            else:
+                curve = cached
+
+            results.append(curve)
+
+        return np.vstack(results)
+
     def _prophetBacktest(self, history, lastDate, curPrice, histories, forward=90):
         prophetTrend = None
         prophetSigma = 0
@@ -239,7 +230,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.15, changepoint_range=0.8) # cpps = 0.05
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=2500) # cpps = 0.05
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])

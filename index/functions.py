@@ -441,7 +441,7 @@ class Charts:
             data.columns = ["ds", "y"]
             data["ds"] = data["ds"].dt.tz_localize(None)
 
-            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=25, changepoint_prior_scale=0.05, changepoint_range=0.8)
+            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=2500)
             m.fit(data)
             
             future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
@@ -470,7 +470,8 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        histories = {90: [0.0642406208065841, "W"], 365: [0.11414014000113692, "D"], 730: [0.3367151092789515, "W"], 1095: [0.14200122056857792, "ME"], 1825: [0.3429029093447487, "YS"]}#[0.3132857106148712, 0.5816743632293431, 0.06080983836628976, 0.0009932806152497136, 0.04323680717424627]
+        #0.011324147285345303, 0.1249793852867192, 0.25379889716871445, 0.45864155170204024, 0.15125602045781694
+        histories = {90: [0.011324147285345303, "W"], 365: [0.1249793852867192, "D"], 730: [0.25379889716871445, "W"], 1095: [0.45864155170204024, "ME"], 1825: [0.15125602045781694, "YS"]} #HARDCODED FOR TESTING 
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:

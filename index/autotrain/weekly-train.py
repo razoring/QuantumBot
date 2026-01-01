@@ -1,11 +1,11 @@
 # weekly-train.py
 import json
+import math
 import yfinance as yf
 import functions as functions
 import pandas as pd
-import random
 import warnings
-import math
+from scipy.optimize import minimize
 import copy
 import numpy as np
 from datetime import datetime, timedelta
@@ -13,11 +13,6 @@ from datetime import datetime, timedelta
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 charts = functions.Charts()
-
-def distribute(values:list, error:float, proximity:float):
-    offset = error*proximity*100+random.random()*100
-    nudged = [max(v+random.uniform(-offset,offset), 0.01) for v in values]
-    return [float(v/sum(nudged)) for v in nudged]
 
 symbols = {
     # Mega Cap Tech
@@ -53,7 +48,7 @@ symbols = {
 symbols = {"AMD"}
 
 #ranges = ["2023-01-01","2025-11-30"]
-ranges = ["2023-01-01","2025-12-30"]
+ranges = ["2023-12-31","2025-12-31"]
 
 """
 biases: {
@@ -85,43 +80,61 @@ for symbol in symbols:
     
     bestWeight = biases[sector].get(ind)[0]
     for origin, price in origins.items(): #origin = fridays
-        print(origin)
-        bestError = 9999.0
-        bestProx = 0.1
-        bestGuess = 0
-        trials = 0
+        configKeys = [90, 180, 365, 730, 1825] 
+        currentBias = {90: [0, "ME"], 180: [0, "ME"], 365: [0, "D"], 730: [0, "W"], 1825: [0, "YS"]}
+        rawCurves = charts.getBatchForecasts(history, currentBias, origin)
+        
+        if rawCurves is None: continue
+        targetDates = [origin + timedelta(days=i) for i in range(91)]
+        validIndices = []
+        actuals = []
+        
+        for i, date in enumerate(targetDates):
+            if date in daily.index:
+                validIndices.append(i)
+                actuals.append(float(daily[date]))
+        
+        if not validIndices: continue
+        matrix = rawCurves[:, validIndices]
+        targets = np.array(actuals)
 
-        while trials <= 100:
-            tests:list = distribute(bestWeight,bestError,bestProx)
-            bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-            errors = []
+        def smapeLoss(w):
+            preds = np.dot(w, matrix)
+            denom = (np.abs(targets) + np.abs(preds))
+            diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
+            return np.mean(diff)
 
-            for day, guess in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
-                guess = max(min(guess, price*2), price*0.5)
-                forward = origin + timedelta(days=day)
-                if forward not in daily.index: continue  # or interpolate
-                actual = round(float(daily[forward]),2)
-                errors.append(2*abs(actual-guess)/(abs(actual) + abs(guess))) #SMAPE
-                #errors.append(abs(actual - guess) / (abs(actual) + 1e-6)) # MAPE, 1e-6 = epsilon
-            error = 0 if len(errors) == 0 else sum(errors)/len(errors) # SMAPE
-            #error = error = None if len(errors) == 0 else sum(errors)/len(errors) # MAPE
-            
-            if error < bestError:
-                    bestWeight = tests
-                    bestError = error
-                    bestGuess = guess
-                    bestProx = bestError*0.01
-            print(trials, guess, actual, error, bestError, tests)
-            if error <= 0.01: break # short-circut, early exit
-            trials += 1
+        cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
+        
+        # FIX 1: Allow weights to reach 0.0. 
+        # This stops the optimizer from "bumping" against the 0.01 wall and triggering warnings.
+        bnds = tuple((0.0, 1.0) for _ in range(5))
+        
+        # FIX 2: Normalize the initial guess ensures it is valid before starting
+        initGuess = np.array(biases[sector].get(ind)[0])
+        initGuess = initGuess / np.sum(initGuess)
+
+        # Optional: Suppress benign warnings if they persist (e.g., during line search)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=RuntimeWarning)
+            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
+        
+        bestWeight = res.x.tolist()
+        bestError = res.fun
+        
+        fullPreds = np.dot(bestWeight, rawCurves) 
+        bestGuess = fullPreds[0] 
+        actual = targets[0] if len(targets) > 0 else 0
 
         prevInd, countInd = biases[sector][ind]
         prevSect, countSect = biases[sector]["weight"]
-        avgInd = [prevInd[j]*(1-0.05) + bestWeight[j]*0.05 for j in range(len(prevInd))] #ema
-        avgSect = [prevSect[j]*(1-0.05) + bestWeight[j]*0.05 for j in range(len(prevSect))] #ema
+        #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0)
+        adjustment = 0.001/(bestError+0.02)+0.03
+        avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
+        avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
         biases[sector][ind] = [avgInd,countInd+1]
         biases[sector]["weight"] = [avgSect,countSect+1]
-        print("best:", trials, bestGuess, actual, bestError, bestProx, bestWeight)
+        print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
 
 weights = open("index/weights.txt","w")
 weights.write(f"// {started}:{datetime.now()} ({datetime.now()-started}) \n"+json.dumps(biases))
