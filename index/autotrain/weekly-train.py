@@ -88,19 +88,33 @@ for symbol in symbols:
         bestGuess = 0
         trials = 0
 
-        tests:list = distribute(bestWeight,bestError,bestProx)
-        bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-        errors = []
+        while trials <= 50*90:
+            tests:list = distribute(bestWeight,bestError,bestProx)
+            bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
+            errors = []
 
-        for day, guess in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
-            forward = origin + timedelta(days=day)
-            if forward not in window.index: continue  # or interpolate
+            for day, guess in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
+                forward = origin + timedelta(days=day)
+                if forward not in window.index: continue  # or interpolate
+                actual = round(float(window[forward]),2)
+                errors.append((actual - round(float(guess),2))**2)    
+            mse = None if len(errors) == 0 else sum(errors)/len(errors)
+            
+            if mse < bestError:
+                    bestWeight = tests
+                    bestError = mse
+                    bestGuess = guess
+                    bestProx = bestError*0.02
+            if mse <= max(0.04*math.log10(actual),0.001): break # short-circut, early exit
+            trials += 1
 
-            actual = float(window[forward])
-            errors.append((actual - guess) ** 2)    
-        mse = None if len(errors) == 0 else sum(errors)/len(errors)
-        print(mse)
-
-
+        prevInd, countInd = biases[sector][ind]
+        prevSect, countSect = biases[sector]["weight"]
+        avgInd = [prevInd[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevInd))] #ema
+        avgSect = [prevSect[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevSect))] #ema
+        biases[sector][ind] = [avgInd,countInd+1]
+        biases[sector]["weight"] = [avgSect,countSect+1]
+        print("best:", bestGuess, actual, mse, bestError, bestProx, bestWeight)
+        
 weights = open("index/weights.txt","w")
 weights.write(f"// {started}:{datetime.now()} ({datetime.now()-started}) \n"+json.dumps(biases))
