@@ -441,7 +441,7 @@ class Charts:
             data.columns = ["ds", "y"]
             data["ds"] = data["ds"].dt.tz_localize(None)
 
-            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=2500)
+            m = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=50, changepoint_prior_scale=0.5, changepoint_range=0.8)
             m.fit(data)
             
             future = m.make_future_dataframe(periods=forward, freq=nested[1]) # dynamic intraday
@@ -459,7 +459,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1wk")
+        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1d") #
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
