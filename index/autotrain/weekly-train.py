@@ -1,3 +1,4 @@
+# weekly-train.py
 import json
 import yfinance as yf
 import functions as functions
@@ -6,6 +7,7 @@ import random
 import warnings
 import math
 import copy
+import numpy as np
 from datetime import datetime, timedelta
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
@@ -13,8 +15,8 @@ warnings.simplefilter(action='ignore', category=FutureWarning)
 charts = functions.Charts()
 
 def distribute(values:list, error:float, proximity:float):
-    offset = error*proximity+0.1*random.random()
-    nudged = [max(v+random.uniform(-offset,offset), 0.001) for v in values]
+    offset = error*proximity*100+random.random()*100
+    nudged = [max(v+random.uniform(-offset,offset), 0.01) for v in values]
     return [float(v/sum(nudged)) for v in nudged]
 
 symbols = {
@@ -70,8 +72,9 @@ for symbol in symbols:
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
     ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
     history = stock.history(start=datetime.strptime(ranges[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(ranges[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
-    window = history[ranges[0]:ranges[1]]["Close"] #training window
-    window = window.resample("W-FRI").last().dropna()
+    window = history[ranges[0]:ranges[1]]["Close"].dropna()
+    origins = window.resample("W-FRI").last().dropna()
+    daily = window.resample("D").interpolate()
     if history.empty: break
     print(symbol, sector, ind)
 
@@ -81,40 +84,44 @@ for symbol in symbols:
         biases[sector][ind][1] = 0
     
     bestWeight = biases[sector].get(ind)[0]
-    for origin, price in window.items(): #origin = fridays
+    for origin, price in origins.items(): #origin = fridays
         print(origin)
         bestError = 9999.0
         bestProx = 0.1
         bestGuess = 0
         trials = 0
 
-        while trials <= 50*90:
+        while trials <= 100:
             tests:list = distribute(bestWeight,bestError,bestProx)
             bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
             errors = []
 
             for day, guess in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
+                guess = max(min(guess, price*2), price*0.5)
                 forward = origin + timedelta(days=day)
-                if forward not in window.index: continue  # or interpolate
-                actual = round(float(window[forward]),2)
-                errors.append((actual - round(float(guess),2))**2)    
-            mse = None if len(errors) == 0 else sum(errors)/len(errors)
+                if forward not in daily.index: continue  # or interpolate
+                actual = round(float(daily[forward]),2)
+                errors.append(2*abs(actual-guess)/(abs(actual) + abs(guess))) #SMAPE
+                #errors.append(abs(actual - guess) / (abs(actual) + 1e-6)) # MAPE, 1e-6 = epsilon
+            error = 0 if len(errors) == 0 else sum(errors)/len(errors) # SMAPE
+            #error = error = None if len(errors) == 0 else sum(errors)/len(errors) # MAPE
             
-            if mse < bestError:
+            if error < bestError:
                     bestWeight = tests
-                    bestError = mse
+                    bestError = error
                     bestGuess = guess
-                    bestProx = bestError*0.02
-            if mse <= max(0.04*math.log10(actual),0.001): break # short-circut, early exit
+                    bestProx = bestError*0.01
+            print(trials, guess, actual, error, bestError, tests)
+            if error <= 0.01: break # short-circut, early exit
             trials += 1
 
         prevInd, countInd = biases[sector][ind]
         prevSect, countSect = biases[sector]["weight"]
-        avgInd = [prevInd[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevInd))] #ema
-        avgSect = [prevSect[j] * (1 - 0.05) + bestWeight[j]*0.05 for j in range(len(prevSect))] #ema
+        avgInd = [prevInd[j]*(1-0.05) + bestWeight[j]*0.05 for j in range(len(prevInd))] #ema
+        avgSect = [prevSect[j]*(1-0.05) + bestWeight[j]*0.05 for j in range(len(prevSect))] #ema
         biases[sector][ind] = [avgInd,countInd+1]
         biases[sector]["weight"] = [avgSect,countSect+1]
-        print("best:", bestGuess, actual, mse, bestError, bestProx, bestWeight)
-        
+        print("best:", trials, bestGuess, actual, bestError, bestProx, bestWeight)
+
 weights = open("index/weights.txt","w")
 weights.write(f"// {started}:{datetime.now()} ({datetime.now()-started}) \n"+json.dumps(biases))
