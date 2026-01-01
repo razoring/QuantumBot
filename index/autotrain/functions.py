@@ -261,22 +261,24 @@ class Charts:
     
     def projectTestDay(self, history, weights, today): #period given in days
         today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
-        window = history[(history.index >= today - timedelta(days=365)) & (history.index <= today)]
+        window = history[(history.index >= today - timedelta(days=730)) & (history.index <= today)]
 
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
-        prophetTrend = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
+        prophetTrend,_ = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=1)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        return prophetTrend[0][1]
+        return prophetTrend[1]
     
     def projectTestWeek(self, history, weights, today): #period given in days
         today = datetime.strptime(today, "%Y-%m-%d") if type(today) == str else today
-        window = history[(history.index >= today - timedelta(days=365)) & (history.index <= today)]
+        window = history[(history.index >= today - timedelta(days=730)) & (history.index <= today)]
 
         curPrice = window["Close"].iloc[-1]
         lastDate = window.index[-1]
         
-        prophetTrend, _ = self._prophetBacktest2(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=90)
+        prophetTrend,_ = self._prophetBacktest(history=window, lastDate=lastDate, curPrice=curPrice, histories=weights, forward=90)
         if prophetTrend is None: raise ValueError("Prophet generation failed")
-        return prophetTrend
+        median = prophetTrend.copy()
+        median = np.maximum(median, 0.01)
+        return median

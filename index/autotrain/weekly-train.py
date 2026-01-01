@@ -65,7 +65,6 @@ biases: {
 started = datetime.now()
 biases:dict[str,list] = {}
 for symbol in symbols:
-    print(symbol)
     stock = yf.Ticker(symbol)
     info = stock.info
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
@@ -74,6 +73,7 @@ for symbol in symbols:
     window = history[ranges[0]:ranges[1]]["Close"] #training window
     window = window.resample("W-FRI").last().dropna()
     if history.empty: break
+    print(symbol, sector, ind)
 
     if sector not in biases: biases[sector] = {"weight":[[0.2, 0.2, 0.2, 0.2, 0.2], 0], ind:[[0.2, 0.2, 0.2, 0.2, 0.2], 0]}
     if ind not in biases[sector]:
@@ -90,8 +90,17 @@ for symbol in symbols:
 
         tests:list = distribute(bestWeight,bestError,bestProx)
         bias = {90:[tests[0], "ME"], 180:[tests[1], "ME"], 365:[tests[2], "D"], 730:[tests[3], "W"], 1825:[tests[4], "YS"]}
-        for day, price in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
-            print(day, price)
+        errors = []
+
+        for day, guess in enumerate(charts.projectTestWeek(history=history, weights=bias, today=origin)):
+            forward = origin + timedelta(days=day)
+            if forward not in window.index: continue  # or interpolate
+
+            actual = float(window[forward])
+            errors.append((actual - guess) ** 2)    
+        mse = None if len(errors) == 0 else sum(errors)/len(errors)
+        print(mse)
+
 
 weights = open("index/weights.txt","w")
 weights.write(f"// {started}:{datetime.now()} ({datetime.now()-started}) \n"+json.dumps(biases))

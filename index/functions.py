@@ -476,15 +476,12 @@ class Charts:
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
-            
         if model == 1:
             if prophetTrend is None: raise ValueError("Prophet generation failed")
             points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
-            
         elif model == 2 and len(points) > 0 and prophetTrend is not None:
             spread = points - curPrice
             points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
-
         if len(points) == 0: return None
 
         points = np.maximum(points, 0.01)
@@ -499,22 +496,18 @@ class Charts:
         self._drawGradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
         mid = len(quantiles) // 2
-        for i in range(mid):
-            ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
-
         median = points[mid]
+
+        for i in range(mid): ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
 
         allDates = list(plotHistory.index) + futureDates
         self._formatAxes(ax, allDates, minY, maxY, median[-1])
         
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
-        ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), 
-                    xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
-                    color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
+        ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
         
-        plt.title(f"{str.upper(ticker)} Prediction (90d)", 
-                  fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
+        plt.title(f"{str.upper(ticker)} Prediction (90d)", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
