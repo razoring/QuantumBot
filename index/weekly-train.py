@@ -68,10 +68,7 @@ for symbol in symbols:
     info = stock.info
     sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
     ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
-    history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(train[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
-    window = history[train[0]:train[1]]["Close"].dropna()
-    daily = window.resample("D").interpolate()
-    origins = window.resample("W-FRI").last().dropna()
+    history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(validation[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
     if history.empty: break
     print(symbol, sector, ind)
 
@@ -81,7 +78,12 @@ for symbol in symbols:
         biases[sector][ind][1] = 0
     
     bestWeight = biases[sector].get(ind)[0]
-    for i in range(2): #1: generation, #2: validation
+    for i in range(3): #1: generation, #2: validation, #3 test unknown
+        print(f'Iteration: {list(["Training","Validation","Testing"])[i]}')
+        window = history[(train[0] if i < 2 else validation[0]) : (train[1] if i < 2 else validation[1])]["Close"].dropna()
+        daily = window.resample("D").interpolate()
+        origins = window.resample("W-FRI").last().dropna()
+
         for origin, price in origins.items(): #origin = fridays
             bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
             rawCurves = charts.getBatchForecasts(history, bias, origin)
@@ -122,9 +124,9 @@ for symbol in symbols:
 
             prevInd, countInd = biases[sector][ind]
             prevSect, countSect = biases[sector]["weight"]
-            adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
+            #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
             #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
-            #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
+            adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
             #adjustment = 0.05 #equal
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
