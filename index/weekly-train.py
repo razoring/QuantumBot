@@ -29,7 +29,7 @@ symbols = {
     "UPST", "AFRM", "CHGG", "BYND", "VIXY", "UVXY", "SVXY", "SPXU", "SQQQ"
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
     "GLD", "SLV", "GDX", "USO", "UNG",
-    "MARA", "RIOT", "MSTR", "GBTC", "BRK-A",
+    "MARA", "RIOT", "MSTR", "BRK-A",
     "^SPX", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
     }
 
