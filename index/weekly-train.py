@@ -81,55 +81,56 @@ for symbol in symbols:
         biases[sector][ind][1] = 0
     
     bestWeight = biases[sector].get(ind)[0]
-    for origin, price in origins.items(): #origin = fridays
-        bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
-        rawCurves = charts.getBatchForecasts(history, bias, origin)
-        
-        if rawCurves is None: continue
-        targetDates = [origin + timedelta(days=i) for i in range(91)]
-        validIndices = []
-        actuals = []
-        
-        for i, date in enumerate(targetDates):
-            if date in daily.index:
-                validIndices.append(i)
-                actuals.append(float(daily[date]))
-        
-        if not validIndices: continue
-        matrix = rawCurves[:, validIndices]
-        targets = np.array(actuals)
+    for i in range(2): #1: generation, #2: validation
+        for origin, price in origins.items(): #origin = fridays
+            bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
+            rawCurves = charts.getBatchForecasts(history, bias, origin)
+            
+            if rawCurves is None: continue
+            targetDates = [origin + timedelta(days=i) for i in range(91)]
+            validIndices = []
+            actuals = []
+            
+            for i, date in enumerate(targetDates):
+                if date in daily.index:
+                    validIndices.append(i)
+                    actuals.append(float(daily[date]))
+            
+            if not validIndices: continue
+            matrix = rawCurves[:, validIndices]
+            targets = np.array(actuals)
 
-        def smapeLoss(w):
-            preds = np.dot(w, matrix)
-            denom = (np.abs(targets) + np.abs(preds))
-            diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
-            return np.mean(diff)
+            def smapeLoss(w):
+                preds = np.dot(w, matrix)
+                denom = (np.abs(targets) + np.abs(preds))
+                diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
+                return np.mean(diff)
 
-        cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-        bnds = tuple((0.0, 1.0) for _ in range(5))
-        initGuess = np.array(biases[sector].get(ind)[0])
-        initGuess = initGuess / np.sum(initGuess)
+            cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
+            bnds = tuple((0.0, 1.0) for _ in range(5))
+            initGuess = np.array(biases[sector].get(ind)[0])
+            initGuess = initGuess / np.sum(initGuess)
 
-        
-        res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
-        bestWeight = res.x.tolist()
-        bestError = res.fun
-        
-        fullPreds = np.dot(bestWeight, rawCurves) 
-        bestGuess = fullPreds[0] 
-        actual = targets[0] if len(targets) > 0 else 0
+            
+            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
+            bestWeight = res.x.tolist()
+            bestError = res.fun
+            
+            fullPreds = np.dot(bestWeight, rawCurves) 
+            bestGuess = fullPreds[0] 
+            actual = targets[0] if len(targets) > 0 else 0
 
-        prevInd, countInd = biases[sector][ind]
-        prevSect, countSect = biases[sector]["weight"]
-        adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
-        #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
-        #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
-        #adjustment = 0.05 #equal
-        avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
-        avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
-        biases[sector][ind] = [avgInd,countInd+1]
-        biases[sector]["weight"] = [avgSect,countSect+1]
-        print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
+            prevInd, countInd = biases[sector][ind]
+            prevSect, countSect = biases[sector]["weight"]
+            adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
+            #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
+            #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
+            #adjustment = 0.05 #equal
+            avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
+            avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
+            biases[sector][ind] = [avgInd,countInd+1]
+            biases[sector]["weight"] = [avgSect,countSect+1]
+            print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
 
 weights = open("index/weights.txt","w")
 weights.write(json.dumps(biases)+f"\n// {started}:{datetime.now()} ({datetime.now()-started})")
