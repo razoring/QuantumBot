@@ -82,9 +82,8 @@ for symbol in symbols:
     
     bestWeight = biases[sector].get(ind)[0]
     for origin, price in origins.items(): #origin = fridays
-        configKeys = [90, 180, 365, 730, 1825] 
-        currentBias = {90: [0, "ME"], 180: [0, "ME"], 365: [0, "D"], 730: [0, "W"], 1825: [0, "YS"]}
-        rawCurves = charts.getBatchForecasts(history, currentBias, origin)
+        bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
+        rawCurves = charts.getBatchForecasts(history, bias, origin)
         
         if rawCurves is None: continue
         targetDates = [origin + timedelta(days=i) for i in range(91)]

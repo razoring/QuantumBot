@@ -465,15 +465,13 @@ class Charts:
 
                 config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=20, changepoint_prior_scale=0.5, changepoint_range=0.8, uncertainty_samples=5000)
                 
-                try:
-                    config.fit(data)
-                    future = config.make_future_dataframe(periods=91, freq='D') 
-                    fcst = config.predict(future)
-                    
-                    rawTrend = fcst.tail(91)["yhat"].values
-                    curve = rawTrend + curPrice - rawTrend[0]
-                except Exception:
-                    curve = np.full(91, curPrice)
+                config.fit(data)
+                future = config.make_future_dataframe(periods=91, freq=settings[1]) 
+                #future = config.make_future_dataframe(periods=91, freq="D") 
+                fcst = config.predict(future)
+                
+                rawTrend = fcst.tail(91)["yhat"].values
+                curve = rawTrend + curPrice - rawTrend[0]
 
                 with self._thread:
                     self._cache[key] = curve
@@ -571,7 +569,7 @@ class Charts:
         info = stock.info
         sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
-        histories = {90: [biases[sector][ind][0][0], "W"], 365: [biases[sector][ind][0][1], "D"], 730: [biases[sector][ind][0][2], "W"], 1095: [biases[sector][ind][0][3], "ME"], 1825: [biases[sector][ind][0][4], "YS"]} #HARDCODED FOR TESTING 
+        histories = {90: [biases[sector][ind][0][0], "ME"], 180: [biases[sector][ind][0][1], "ME"], 365: [biases[sector][ind][0][2], "D"], 730: [biases[sector][ind][0][3], "W"], 1825: [biases[sector][ind][0][4], "YS"]}
         prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
 
         if model != 1:
