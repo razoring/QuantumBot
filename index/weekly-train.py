@@ -26,7 +26,7 @@ symbols = {
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
     "TNA", "TZA", "ROKU", "SOFI", 
     "LMT", "BA", "UPS", "FDX", "GM", "F",
-    "UPST", "AFRM", "CHGG", "BYND", "VIXY", "UVXY", "SVXY", "SPXU", "SQQQ"
+    "UPST", "AFRM", "CHGG", "BYND", "VIXY", "UVXY", "SVXY", "SPXU", "SQQQ",
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
     "GLD", "SLV", "GDX", "USO", "UNG",
     "MARA", "RIOT", "MSTR", "BRK-A",
