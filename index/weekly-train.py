@@ -46,7 +46,7 @@ symbols = {
     "MARA", "RIOT", "MSTR", "GBTC"
     }
 
-symbols = {"AMD"}
+#symbols = {"NVDA"}
 
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2023-12-31","2024-12-31"]
