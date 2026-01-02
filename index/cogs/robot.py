@@ -140,6 +140,7 @@ class Robot(commands.Cog):
             symbol = str(symbols[i])
             if names is not None: name = str(names.iloc[i]) if names.iloc[i] is not None else "Unknown"
             else: name = "Unknown"
+            name = re.sub(" +"," ",name)
             desc += f"- ({symbol}) {name}\n"
 
         embed.description = desc
