@@ -32,24 +32,19 @@ bot = QuantumBot()
 async def reload(ctx):
     status_msg = await ctx.send("Reloading...")
     
-    try:
-        await bot.unload_extension("cogs.robot")
-        nuked = ["cogs.functions", "themes", "cogs.robot"]
-        
-        for module in nuked:
-            if module in sys.modules:
-                del sys.modules[module]
-        await bot.load_extension("cogs.robot")
-        
-        if ctx.guild:
-            bot.tree.copy_global_to(guild=ctx.guild)
-            await bot.tree.sync(guild=ctx.guild)
-        
-        await status_msg.edit(content="Reloaded & Synced (Local Guild) [Use !sync to sync globally]")
-    except Exception as e:
-        type, obj, line = sys.exc_info()
-        print(f"Reload Error: {e}")
-        await status_msg.edit(content=f"(Line {line.tb_lineno}) ERROR: ```{e}```")
+    await bot.unload_extension("cogs.robot")
+    nuked = ["cogs.functions", "themes", "cogs.robot"]
+    
+    for module in nuked:
+        if module in sys.modules:
+            del sys.modules[module]
+    await bot.load_extension("cogs.robot")
+    
+    if ctx.guild:
+        bot.tree.copy_global_to(guild=ctx.guild)
+        await bot.tree.sync(guild=ctx.guild)
+    
+    await status_msg.edit(content="Reloaded & Synced (Local Guild) [Use !sync to sync globally]")
 
 @bot.command(name="sync", hidden=True)
 @commands.is_owner()
