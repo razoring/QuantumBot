@@ -124,6 +124,27 @@ class Feedback(discord.ui.View):
 class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+    
+    def lookup(self, query, header="Results for", boolean=False):
+        results = yf.Lookup(query).get_all(10)
+        symbols = results.index.to_list() if "exchange" not in results.columns else results["exchange"].index.to_list()
+        names = results["shortName"] if "shortName" in results else None
+        sanity = query.upper() in [s.upper() for s in symbols]
+        if boolean: return sanity
+        if results is None or results.empty or results.index.empty: return discord.Embed(color=discord.Colour.teal(),title=f"No suggestions found. Please check your spelling.")
+
+        desc = ""
+        embed = discord.Embed(color=discord.Colour.teal(),title=f"{header.strip()} {query.upper()}:")
+
+        for i, name in enumerate(names):
+            symbol = str(symbols[i])
+            if names is not None: name = str(names.iloc[i]) if names.iloc[i] is not None else "Unknown"
+            else: name = "Unknown"
+            desc += f"- ({symbol}) {name}\n"
+
+        embed.description = desc
+        return embed
+
 
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
@@ -137,12 +158,18 @@ class Robot(commands.Cog):
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
     async def quote(self, interaction: discord.Interaction, ticker: str):
         await interaction.response.defer()
+
+        sanity = self.lookup(ticker,boolean=True)
+        if sanity == False:
+            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+            return
+
         info = functions.yFinanceWrapper(ticker=ticker)
         static = getStatic(info)
         
-        update_view = Update(ticker=ticker)
-        embed = infoEmbed(info=info, ticker=ticker, static=static)
-        await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update_view)
+        update = Update(ticker=ticker)
+        embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
+        await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
@@ -161,11 +188,17 @@ class Robot(commands.Cog):
     ])
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
         await interaction.response.defer()
+        
+        sanity = self.lookup(ticker,boolean=True)
+        if sanity == False:
+            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"))
+            return
+
         info = functions.yFinanceWrapper(ticker=ticker)
         static = getStatic(info)
 
-        update_view = Update(ticker=ticker)
-        embed = infoEmbed(info=info, ticker=ticker, static=static)
+        update = Update(ticker=ticker)
+        embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
         
         invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
         icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
@@ -174,8 +207,7 @@ class Robot(commands.Cog):
         if img:
             file = discord.File(img, filename="output.png")
             embed.set_image(url="attachment://output.png")
-            await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update_view)
-        else: await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=update_view)
+            await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update)
 
     @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
     @app_commands.describe(ticker="Ticker to create/delete alerts for")
@@ -191,6 +223,10 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
         await interaction.response.defer()
+
+        if self.lookup(ticker,boolean=True) == False:
+            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+            return
 
         embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
         embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
@@ -215,21 +251,11 @@ class Robot(commands.Cog):
             if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
             
             await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
-        else: await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct```")
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
-    @app_commands.describe(ticker="The ticker to check")
+    @app_commands.describe(query="The input to validate")
     async def tickers(self, interaction: discord.Interaction, query:str):
         await interaction.response.defer()
-
-        embed = discord.Embed(color=discord.Colour.teal(), title=f"Results for {query}:")
-        import yfinance as yf
-
-        results = yf.Lookup("SPX").get_all(10)
-        desc = ""
-        for i, name in enumerate(results["shortName"]):
-            desc += re.sub(" +"," ","- ("+results["exchange"].index.to_list()[i]+") "+name+"\n")
-        embed.description = (desc)
-        interaction.followup.send(embed=embed)
+        await interaction.followup.send(embed=self.lookup(query=query))
 
 async def setup(bot): await bot.add_cog(Robot(bot))

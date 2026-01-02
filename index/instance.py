@@ -18,11 +18,8 @@ class QuantumBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
 
     async def setup_hook(self):
-        try:
-            await self.load_extension("cogs.robot")
-            print("Extension 'cogs.robot' loaded.")
-        except Exception as e:
-            print(f"ERROR: {e}")
+        await self.load_extension("cogs.robot")
+        print("Extension 'cogs.robot' loaded.")
             
     async def on_ready(self):
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name="/predict"))
@@ -37,7 +34,7 @@ async def reload(ctx):
     
     try:
         await bot.unload_extension("cogs.robot")
-        nuked = ["cogs.functions", "themes"]
+        nuked = ["cogs.functions", "themes", "cogs.robot"]
         
         for module in nuked:
             if module in sys.modules:
@@ -49,10 +46,10 @@ async def reload(ctx):
             await bot.tree.sync(guild=ctx.guild)
         
         await status_msg.edit(content="Reloaded & Synced (Local Guild) [Use !sync to sync globally]")
-        
     except Exception as e:
+        type, obj, line = sys.exc_info()
         print(f"Reload Error: {e}")
-        await status_msg.edit(content=f"ERROR: ```{e}```")
+        await status_msg.edit(content=f"(Line {line.tb_lineno}) ERROR: ```{e}```")
 
 @bot.command(name="sync", hidden=True)
 @commands.is_owner()

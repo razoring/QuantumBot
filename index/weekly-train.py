@@ -30,7 +30,7 @@ symbols = {
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
     "GLD", "SLV", "GDX", "USO", "UNG",
     "MARA", "RIOT", "MSTR", "GBTC", "BRK-A",
-    "^SPY", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
+    "^SPX", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
     }
 
 #symbols = {"NVDA"}
