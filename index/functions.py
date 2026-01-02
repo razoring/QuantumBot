@@ -197,8 +197,8 @@ class Charts:
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
         self._inflections = 25
-        self._scale = 0.05
-        self._confidence = 0.8
+        self._scale = 0.5
+        self._confidence = 0.2
         self._samples = 2000
 
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):

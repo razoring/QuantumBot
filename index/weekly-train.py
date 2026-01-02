@@ -16,34 +16,21 @@ with warnings.catch_warnings(): warnings.filterwarnings("ignore", category=Runti
 charts = functions.Charts()
 
 symbols = {
-    # Mega Cap Tech
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META",
-    # Momentum
-    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI",
-    # Financials (Cyclical)
-    "JPM", "BAC", "V", "BRK-B", "PYPL",
-    # Consumer Defensive (Defensive/Low Beta)
-    "KO", "PG", "WMT", "MCD", "DG",
-    # Healthcare (Defensive)
-    "JNJ", "UNH", "PFE",
-    # Energy/Industrial (Cyclical)
-    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO",
-    # Utility/Real Estate (Interest Rate Sensitive)
-    "NEE", "O", "NEM",
-    # ETFS (Balanced/Fallback)
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "NFLX", "ORCL", "IBM",
+    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI", "AVGO", "NET", "SNOW", "CRWD", "DDOG", "MDB", "ZS",
+    "JPM", "BAC", "V", "BRK-B", "PYPL", "GS", "MS", "WFC", "TD", "RY", "AXP", "AIG", "SCHW", "BTC-USD", "ETH-USD",
+    "KO", "PG", "WMT", "MCD", "DG", "DE", "HON", "MMM", "DOW", "FCX", "LIN", "COST", "HD", "LOW", "TGT", "SBUX", "NKE",
+    "JNJ", "UNH", "PFE", "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "ENB.TO", "CNQ.TO", "SU.TO", "TRP.TO", "ABX.TO", "WPM.TO", "CP.TO", "CNR.TO", "BCE.TO", "T.TO",
+    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO", "SLB", "HAL", "DVN", "PXD", "COP",
+    "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD",
     "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
-    # Bing Suggestions:
     "TNA", "TZA", "ROKU", "SOFI", 
-    # Transport:
     "LMT", "BA", "UPS", "FDX", "GM", "F",
-    # Downers: 
-    "UPST", "AFRM", "CHGG", "BYND", "VIXY",
-    # International:
+    "UPST", "AFRM", "CHGG", "BYND", "VIXY", "UVXY", "SVXY", "SPXU", "SQQQ"
     "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
-    # Commodities:
     "GLD", "SLV", "GDX", "USO", "UNG",
-    # Crypto:
-    "MARA", "RIOT", "MSTR", "GBTC"
+    "MARA", "RIOT", "MSTR", "GBTC", "BRK-A",
+    "^SPY", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
     }
 
 #symbols = {"NVDA"}
