@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import typing
 import datetime
 from urllib.parse import urlparse as url
@@ -13,6 +14,7 @@ from github import Auth, Github
 from dotenv import load_dotenv
 
 import functions
+import yfinance as yf
 from themes import brand, bgDark
 
 load_dotenv()
@@ -34,7 +36,7 @@ def getVersion():
     except:
         return RELEASE
 
-def get_static_data(info):
+def getStatic(info):
     return {
         "getDayOpen": info.getDayOpen(),
         "getDayClose": info.getDayClose(),
@@ -82,12 +84,9 @@ class Update(discord.ui.View):
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         new_info = functions.yFinanceWrapper(ticker=self.ticker)
-        new_static = get_static_data(new_info)
+        new_static = getStatic(new_info)
         
-        await interaction.response.edit_message(
-            embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), 
-            view=self
-        )
+        await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
 class Feedback(discord.ui.View):
     def __init__(self, alertPrice, alertTicker, model, fileObject):
@@ -104,9 +103,7 @@ class Feedback(discord.ui.View):
         hook.execute()
         
         items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
-        for item in items_to_remove:
-            self.remove_item(item)
-            
+        for item in items_to_remove: self.remove_item(item)
         await interaction.edit_original_response(view=self)
 
     @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
@@ -141,7 +138,7 @@ class Robot(commands.Cog):
     async def quote(self, interaction: discord.Interaction, ticker: str):
         await interaction.response.defer()
         info = functions.yFinanceWrapper(ticker=ticker)
-        static = get_static_data(info)
+        static = getStatic(info)
         
         update_view = Update(ticker=ticker)
         embed = infoEmbed(info=info, ticker=ticker, static=static)
@@ -165,7 +162,7 @@ class Robot(commands.Cog):
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
         await interaction.response.defer()
         info = functions.yFinanceWrapper(ticker=ticker)
-        static = get_static_data(info)
+        static = getStatic(info)
 
         update_view = Update(ticker=ticker)
         embed = infoEmbed(info=info, ticker=ticker, static=static)
@@ -178,21 +175,12 @@ class Robot(commands.Cog):
             file = discord.File(img, filename="output.png")
             embed.set_image(url="attachment://output.png")
             await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update_view)
-        else:
-            await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=update_view)
+        else: await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```", view=update_view)
 
-    @app_commands.command(name="alerts", description="Create or check alerts for your given ticker")
-    @app_commands.describe(action="Action to take", ticker="Ticker to create/delete alerts for", price="Price to set alert for", identifier="Identifier used for deletion")
-    @app_commands.choices(action=[
-        app_commands.Choice(name="Create", value="c"),
-        app_commands.Choice(name="Delete", value="d"),
-        app_commands.Choice(name="List", value="l"),
-        app_commands.Choice(name="Clear", value="c")
-    ])
-    async def alerts(self, interaction: discord.Interaction, ticker: typing.Optional[app_commands.Choice[str]], action: str, price: typing.Optional[app_commands.Choice[str]], identifier: typing.Optional[app_commands.Choice[str]]):
-        if type(ticker) is type(None) and type(price) is type(None) and type(identifier) is type(None):
-            await interaction.response.send_message("```Nothing but us chickens. (See /help for help)```", ephemeral=True)
-            return
+    @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
+    @app_commands.describe(ticker="Ticker to create/delete alerts for")
+    async def alerts(self, interaction: discord.Interaction, ticker: typing.Optional[app_commands.Choice[str]]):
+        pass
 
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")
@@ -218,24 +206,30 @@ class Robot(commands.Cog):
         if img is None:
             warning = True
             img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
-        
         if img:
             img_copy = io.BytesIO(img.getvalue())
-            
             file = discord.File(img, filename="output.png")
             embed.set_image(url="attachment://output.png")
             
             feedback_view = Feedback(90, ticker, selectedModel, img_copy)
+            if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
             
-            if warning:
-                embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
-            
-            await interaction.followup.send(
-                f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:",
-                file=file, embed=embed, view=feedback_view
-            )
-        else:
-            await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct.```")
+            await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
+        else: await interaction.followup.send("```ERROR: Please check you entered the ticker symbol correct```")
 
-async def setup(bot):
-    await bot.add_cog(Robot(bot))
+    @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
+    @app_commands.describe(ticker="The ticker to check")
+    async def tickers(self, interaction: discord.Interaction, query:str):
+        await interaction.response.defer()
+
+        embed = discord.Embed(color=discord.Colour.teal(), title=f"Results for {query}:")
+        import yfinance as yf
+
+        results = yf.Lookup("SPX").get_all(10)
+        desc = ""
+        for i, name in enumerate(results["shortName"]):
+            desc += re.sub(" +"," ","- ("+results["exchange"].index.to_list()[i]+") "+name+"\n")
+        embed.description = (desc)
+        interaction.followup.send(embed=embed)
+
+async def setup(bot): await bot.add_cog(Robot(bot))
