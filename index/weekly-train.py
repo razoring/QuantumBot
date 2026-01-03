@@ -67,7 +67,7 @@ for symbol in symbols:
     bestValidation = float("inf")
     bestWeight = biases[sector].get(ind)[0][:]
     for stage in ["train", "validate", "test"]: #1: generation, #2: validation, #3 test unknown
-        print(f'Iteration: {list(["Training","Validation","Testing"])[i]}')
+        print(stage)
 
         if stage == "train": w0, w1 = train
         elif stage == "valid": w0, w1 = valid
