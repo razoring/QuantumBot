@@ -74,7 +74,6 @@ for symbol in symbols:
         else: w0, w1 = tests
 
         window = history[w0:w1]["Close"].dropna()
-        if window.empty(): continue
         daily = window.resample("D").interpolate()
         origins = window.resample("W-FRI").last().dropna()
 
