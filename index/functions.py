@@ -196,10 +196,10 @@ class Charts:
         self._thread = threading.Lock()
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
-        self._inflections = 10
-        self._scale = 0.01
-        self._confidence = 0.8
-        self._samples = 2500
+        self._inflections = 20 # number of bends
+        self.__flexibility = 0.1
+        self._range = 0.5 # up to what percentage of the history prophet learns from
+        self._samples = 2500 # how smooth, more = smoother
 
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -453,8 +453,8 @@ class Charts:
             startDate = lastDate - timedelta(days=int(h))
             window = history[(history.index > startDate) & (history.index <= lastDate)]
             
-            if len(window) < 20:
-                results.append(np.full(91, curPrice))
+            if len(window) < 500:
+                #results.append(np.full(91, curPrice))
                 continue
             
             key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]))
@@ -467,7 +467,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=False, weekly_seasonality=True, n_changepoints=self._inflections, changepoint_prior_scale=self._scale, changepoint_range=self._confidence, uncertainty_samples=self._samples)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=self._inflections, changepoint_prior__flexibility=self.__flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
                 
                 config.fit(data)
                 future = config.make_future_dataframe(periods=91, freq=settings[1]) 
@@ -534,7 +534,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=True, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=50, n_changepoints=self._inflections, changepoint_prior_scale=self._scale, changepoint_range=self._confidence, uncertainty_samples=self._samples) # cpps = 0.05
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior__flexibility=10, n_changepoints=self._inflections, changepoint_prior__flexibility=self.__flexibility, changepoint_range=self._range, uncertainty_samples=self._samples) # cpps = 0.05
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
