@@ -445,7 +445,7 @@ class Charts:
         else:
             lastDate = today
 
-        curPrice =  float(history.iloc[0]) if hasattr(history.loc[lastDate]["Close"], "iloc") else float(history.loc[lastDate]["Close"])
+        curPrice = history.loc[lastDate]["Close"]
         results = []
         
         # Iterate through configs: {horizon: [weight, freq]}
@@ -453,8 +453,8 @@ class Charts:
             startDate = lastDate - timedelta(days=int(h))
             window = history[(history.index > startDate) & (history.index <= lastDate)]
             
-            if len(window) < 500:
-                #results.append(np.full(91, curPrice))
+            if len(window) < 100:
+                results.append(np.full(91, curPrice))
                 continue
             
             key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]))

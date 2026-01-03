@@ -43,6 +43,8 @@ biases: {
 }
 """
 
+symbols = {"NVDA"}
+
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]
 valid = ["2024-01-01","2024-12-31"]
@@ -67,9 +69,11 @@ for symbol in symbols:
     bestWeight = biases[sector].get(ind)[0]
     for i in range(3): #1: generation, #2: validation, #3 test unknown
         print(f'Iteration: {list(["Training","Validation","Testing"])[i]}')
-        window = history[(train[0] if i < 2 else tests[0]) : (train[1] if i < 2 else tests[1])]["Close"].dropna()
+        window = history[(train[0] if i < 2 else tests[0]) : (train[1] if i < 2 else tests[1])]
         daily = window.resample("D").interpolate()
-        origins = window.resample("W-FRI").last().dropna()
+        if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
+        origins = window["Close"].resample("W-FRI").last().dropna()
+
 
         for origin, price in origins.items(): #origin = fridays
             bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
@@ -81,9 +85,10 @@ for symbol in symbols:
             actuals = []
             
             for i, date in enumerate(targetDates):
-                if date in daily.index:
+                d = date.tz_convert("America/New_York").tz_localize(None) if date.tzinfo is not None else date
+                if d in daily.index:
                     validIndices.append(i)
-                    actuals.append(float(daily[date]))
+                    actuals.append(float(daily.loc[d, "Close"]))
             
             if not validIndices: continue
             matrix = rawCurves[:, validIndices]
