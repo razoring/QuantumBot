@@ -42,7 +42,7 @@ biases: {
     },
 }
 """
-symbols = {"NVDA"}
+
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]
 valid = ["2024-01-01","2024-12-31"]
@@ -64,28 +64,21 @@ for symbol in symbols:
         biases[sector][ind] = copy.deepcopy(biases[sector]["weight"])
         biases[sector][ind][1] = 0
     
-    bestValidation = float("inf")
-    bestWeight = biases[sector].get(ind)[0][:]
-    for stage in ["train", "validate", "test"]: #1: generation, #2: validation, #3 test unknown
-        print(stage)
-
-        if stage == "train": w0, w1 = train
-        elif stage == "valid": w0, w1 = valid
-        else: w0, w1 = tests
-
-        window = history[w0:w1].copy()
-        window = window.dropna()
+    bestWeight = biases[sector].get(ind)[0]
+    for i in range(3): #1: generation, #2: validation, #3 test unknown
+        print(f'Iteration: {list(["Training","Validation","Testing"])[i]}')
+        window = history[(train[0] if i < 2 else tests[0]) : (train[1] if i < 2 else tests[1])]["Close"].dropna()
         daily = window.resample("D").interpolate()
         origins = window.resample("W-FRI").last().dropna()
 
         for origin, price in origins.items(): #origin = fridays
-            curWeights = biases[sector][ind][0]
-            bias = {90:[curWeights[0], "ME"], 180:[curWeights[1], "ME"], 365:[curWeights[2], "D"], 730:[curWeights[3], "W"], 1825:[curWeights[4], "YS"]}
+            bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
             rawCurves = charts.getBatchForecasts(window, bias, origin)
             
             if rawCurves is None: continue
-            targetDates = [origin+timedelta(days=i) for i in range(91)]
-            validIndices,actuals = [], []
+            targetDates = [origin + timedelta(days=i) for i in range(91)]
+            validIndices = []
+            actuals = []
             
             for i, date in enumerate(targetDates):
                 if date in daily.index:
@@ -102,42 +95,31 @@ for symbol in symbols:
                 diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
                 return np.mean(diff)
 
-            #constraints
             cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
             bnds = tuple((0.0, 1.0) for _ in range(5))
             initGuess = np.array(biases[sector].get(ind)[0])
             initGuess = initGuess / np.sum(initGuess)
 
-            if stage == "train":
-                res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
-                bestWeight = res.x.tolist()
-                bestError = res.fun
-                
-                fullPreds = np.dot(bestWeight, rawCurves) 
-                bestGuess = fullPreds[0] 
-                actual = targets[0] if len(targets) > 0 else 0
+            
+            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
+            bestWeight = res.x.tolist()
+            bestError = res.fun
+            
+            fullPreds = np.dot(bestWeight, rawCurves) 
+            bestGuess = fullPreds[0] 
+            actual = targets[0] if len(targets) > 0 else 0
 
-                prevInd, countInd = biases[sector][ind]
-                prevSect, countSect = biases[sector]["weight"]
-                adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
-                #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
-                #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
-                #adjustment = 0.05 #equal
-                avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
-                avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
-                biases[sector][ind] = [avgInd,countInd+1]
-                biases[sector]["weight"] = [avgSect,countSect+1]
-                print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-            elif stage == "validate":
-                error = smapeLoss(curWeights)
-                if error < bestValidation:
-                    bestValidation = error
-                    bestWeight = curWeights[:]
-                    print(origin.date(), error)
-            else:
-                test_error = smapeLoss(bestWeight)
-                print(origin.date(), test_error)
-        biases[sector][ind][0] = bestWeight[:]
+            prevInd, countInd = biases[sector][ind]
+            prevSect, countSect = biases[sector]["weight"]
+            adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
+            #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
+            #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
+            #adjustment = 0.05 #equal
+            avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
+            avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
+            biases[sector][ind] = [avgInd,countInd+1]
+            biases[sector]["weight"] = [avgSect,countSect+1]
+            print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
 
 weights = open("index/weights.txt","w")
 weights.write(json.dumps(biases)+f"\n// {started}:{datetime.now()} ({datetime.now()-started})")
