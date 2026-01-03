@@ -197,7 +197,7 @@ class Charts:
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
         self._inflections = 20 # number of bends
-        self.__flexibility = 0.1
+        self._flexibility = 0.1
         self._range = 0.5 # up to what percentage of the history prophet learns from
         self._samples = 2500 # how smooth, more = smoother
 
@@ -445,7 +445,7 @@ class Charts:
         else:
             lastDate = today
 
-        curPrice = history.loc[lastDate]["Close"]
+        curPrice =  float(history.iloc[0]) if hasattr(history.loc[lastDate]["Close"], "iloc") else float(history.loc[lastDate]["Close"])
         results = []
         
         # Iterate through configs: {horizon: [weight, freq]}
@@ -467,7 +467,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=self._inflections, changepoint_prior__flexibility=self.__flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
                 
                 config.fit(data)
                 future = config.make_future_dataframe(periods=91, freq=settings[1]) 
@@ -534,7 +534,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior__flexibility=10, n_changepoints=self._inflections, changepoint_prior__flexibility=self.__flexibility, changepoint_range=self._range, uncertainty_samples=self._samples) # cpps = 0.05
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=10, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples) # cpps = 0.05
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
