@@ -73,7 +73,8 @@ for symbol in symbols:
         elif stage == "valid": w0, w1 = valid
         else: w0, w1 = tests
 
-        window = history[w0:w1]["Close"].dropna()
+        window = history[w0:w1].copy()
+        window = window.dropna()
         daily = window.resample("D").interpolate()
         origins = window.resample("W-FRI").last().dropna()
 
