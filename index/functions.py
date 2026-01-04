@@ -197,9 +197,10 @@ class Charts:
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64
         self._inflections = 20 # number of bends
-        self._flexibility = 0.1
-        self._range = 0.5 # up to what percentage of the history prophet learns from
-        self._samples = 2500 # how smooth, more = smoother
+        self._flexibility = 0.05 #
+        self._range = 0.6 # up to what percentage of the history prophet learns from
+        self._samples = 3000 # how smooth, more = smoother
+        self._seasonality = 10
 
     def getBatchForecasts(self, history, configs, today):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
@@ -232,7 +233,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=self._seasonality, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
                 
                 config.fit(data)
                 future = config.make_future_dataframe(periods=91, freq=settings[1]) 
@@ -299,7 +300,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=10, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples) # cpps = 0.05
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=0.1, n_changepoints=self._inflections, changepoint_prior_scale=0.05, changepoint_range=0.5, uncertainty_samples=self._samples)
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
@@ -323,7 +324,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
         stock = yf.Ticker(ticker)
-        history = stock.history(period="1mo") if model == 0 else stock.history(period="2y", interval="1d") #
+        history = stock.history(period="1mo") if model == 0 else stock.history(period="5y", interval="1d") #
         if history.empty: return None
         
         curPrice = history["Close"].iloc[-1]
