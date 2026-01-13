@@ -1,6 +1,5 @@
-# --- START OF FILE instance.py ---
 import os
-import sys # <--- REQUIRED for reloading modules
+import sys
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
