@@ -100,8 +100,8 @@ for symbol in symbols:
                 denom = (np.abs(targets) + np.abs(preds))
                 diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
                 smape = np.mean(diff)
-                entropy_penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))  # penalize peaky distributions
-                return smape + entropy_penalty
+                penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))  # penalize peaky distributions; entropy penalty
+                return smape + penalty
 
             cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
             bnds = tuple((0.0, 1.0) for _ in range(5))

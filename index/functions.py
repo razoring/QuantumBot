@@ -341,7 +341,7 @@ class Charts:
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
         histories = {90: [biases[sector][ind][0][0], "ME"], 180: [biases[sector][ind][0][1], "ME"], 365: [biases[sector][ind][0][2], "D"], 730: [biases[sector][ind][0][3], "W"], 1825: [biases[sector][ind][0][4], "YS"]}
 
-        raw = self.getBatchForecasts(history=history, histories=histories, today=lastDate, forward=forward+1)
+        raw = self.getBatchForecasts(history=history, configs=histories, today=lastDate)
         if raw is None or len(raw) == 0: return None
         weights = np.array([val[0] for val in histories.values()])
         weighted = raw * weights[:, None]
