@@ -300,7 +300,7 @@ class Charts:
                 data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
                 data["ds"] = data["ds"].dt.tz_localize(None)
 
-                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=0.1, n_changepoints=self._inflections, changepoint_prior_scale=0.05, changepoint_range=0.5, uncertainty_samples=self._samples)
+                config = ph(daily_seasonality=False, yearly_seasonality=True, weekly_seasonality=True, seasonality_prior_scale=self._seasonality, n_changepoints=self._inflections, changepoint_prior_scale=self._flexibility, changepoint_range=self._range, uncertainty_samples=self._samples)
                 config.fit(data)
 
                 future = config.make_future_dataframe(periods=forward, freq=nested[1])
@@ -340,7 +340,13 @@ class Charts:
         sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
         histories = {90: [biases[sector][ind][0][0], "ME"], 180: [biases[sector][ind][0][1], "ME"], 365: [biases[sector][ind][0][2], "D"], 730: [biases[sector][ind][0][3], "W"], 1825: [biases[sector][ind][0][4], "YS"]}
-        prophetTrend, prophetSigma = self._prophetInit(history, lastDate, curPrice, histories) 
+
+        raw = self.getBatchForecasts(history=history, histories=histories, today=lastDate, forward=forward+1)
+        if raw is None or len(raw) == 0: return None
+        weights = np.array([val[0] for val in histories.values()])
+        weighted = raw * weights[:, None]
+        prophetTrend = np.sum(weighted, axis=0)
+        prophetSigma = 0
 
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)

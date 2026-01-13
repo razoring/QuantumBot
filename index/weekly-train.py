@@ -94,13 +94,13 @@ for symbol in symbols:
             matrix = rawCurves[:, validIndices]
             targets = np.array(actuals)
 
-            lambda_reg = 0.01  # tune
+            tune = 0.01  # tune
             def smapeLoss(w):
                 preds = np.dot(w, matrix)
                 denom = (np.abs(targets) + np.abs(preds))
                 diff = 2 * np.abs(preds - targets) / (denom + 1e-8)
                 smape = np.mean(diff)
-                entropy_penalty = lambda_reg * np.sum(w * np.log((w + 1e-8) * 5))  # penalize peaky distributions
+                entropy_penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))  # penalize peaky distributions
                 return smape + entropy_penalty
 
             cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
