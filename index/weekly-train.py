@@ -52,7 +52,8 @@ valid = ["2024-01-01","2024-12-31"]
 tests = ["2025-01-01","2025-12-31"]
 
 started = datetime.now()
-biases:dict[str,list] = {}
+#biases:dict[str,list] = {} #start fresh
+with open("index\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
 for symbol in symbols:
     stock = yf.Ticker(symbol)
     info = stock.info
