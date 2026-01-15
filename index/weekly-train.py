@@ -9,30 +9,16 @@ from scipy.optimize import minimize
 import copy
 import numpy as np
 from datetime import datetime, timedelta
+import re
 # loop through symbols, use predictTest, use frequencies as seconds, use 1mo,3mo,6mo,1y,2y,5y as range
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 with warnings.catch_warnings(): warnings.filterwarnings("ignore", category=RuntimeWarning)
 charts = functions.Charts()
 
-symbols = {
-    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "NFLX", "ORCL", "IBM",
-    "TSLA", "AMD", "COIN", "PLTR", "HOOD", "RIVN", "SMCI", "AVGO", "NET", "SNOW", "CRWD", "DDOG", "MDB", "ZS",
-    "JPM", "BAC", "V", "BRK-B", "PYPL", "GS", "MS", "WFC", "TD", "RY", "AXP", "AIG", "SCHW", "BTC-USD", "ETH-USD",
-    "KO", "PG", "WMT", "MCD", "DG", "DE", "HON", "MMM", "DOW", "FCX", "LIN", "COST", "HD", "LOW", "TGT", "SBUX", "NKE",
-    "JNJ", "UNH", "PFE", "RY.TO", "TD.TO", "BNS.TO", "BMO.TO", "CM.TO", "ENB.TO", "CNQ.TO", "SU.TO", "TRP.TO", "ABX.TO", "WPM.TO", "CP.TO", "CNR.TO", "BCE.TO", "T.TO",
-    "XOM", "CVX", "CAT", "GE", "ENB", "H.TO", "CU.TO", "SLB", "HAL", "DVN", "COP",
-    "NEE", "O", "NEM", "TLT", "IEF", "HYG", "LQD",
-    "SPY", "QQQ", "IWM", "XLF", "XLE", "ARKK",
-    "TNA", "TZA", "ROKU", "SOFI", 
-    "LMT", "BA", "UPS", "FDX", "GM", "F",
-    "UPST", "AFRM", "CHGG", "BYND", "VIXY", "UVXY", "SVXY", "SPXU", "SQQQ",
-    "BABA", "TSM", "NIO", "SHOP", "BP", "SHEL", "RIO", "BHP",
-    "GLD", "SLV", "GDX", "USO", "UNG",
-    "MARA", "RIOT", "MSTR", "BRK-A",
-    "^SPX", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
-}
-
+symbols = []
+with open("index\modular\symbols.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
+print(symbols)
 
 """
 biases: {

@@ -1,0 +1,131 @@
+/* US Exchanges */
+AAPL, MSFT, NVDA, AMD, INTC, MU, /* Technology: Semiconductors & General Tech */
+AVGO, QCOM, TXN, ADI, ON, MCHP, /* Technology: Semiconductors (Analog/Digital Mix) */
+CRM, NOW, ADSK, INTU, SNOW, MDB, /* Technology: Software (Enterprise SaaS + Data) */
+ORCL, SAP, IBM, ACN, CTSH, DXC, /* Technology: IT Services & Legacy Software */
+ADBE, PANW, CRWD, ZS, FTNT, DDOG, /* Technology: Cybersecurity & Cloud Monitoring */
+
+GOOGL, META, NFLX, DIS, ROKU, SPOT, /* Communication Services: Media & Streaming */
+TMUS, VZ, T, CHTR, CMCSA, DISH, /* Communication Services: Telecom */
+TTWO, EA, ATVI, RBLX, U, ZNGA, /* Communication Services: Interactive Entertainment */
+
+JPM, BAC, WFC, C, USB, PNC, /* Financials: Diversified Banks */
+GS, MS, SCHW, BK, BLK, TROW, /* Financials: Capital Markets & Asset Managers */
+AXP, COF, DFS, SYF, MA, V, /* Financials: Consumer Finance & Payments */
+PGR, ALL, TRV, CB, AIG, MET, /* Financials: Insurance */
+SPGI, MCO, ICE, CME, NDAQ, MKTX, /* Financials: Market Infrastructure */
+
+XOM, CVX, COP, OXY, PXD, EOG, /* Energy: Integrated & E&P */
+SLB, HAL, BKR, FTI, CHX, OII, /* Energy: Oilfield Services */
+MPC, VLO, PSX, DINO, PBF, DK, /* Energy: Refiners */
+ENPH, FSLR, RUN, NOVA, SPWR, SEDG, /* Energy: Renewables & Solar */
+
+UNH, HUM, CI, CNC, MOH, ELV, /* Healthcare: Managed Care */
+JNJ, PFE, MRK, BMY, ABBV, GILD, /* Healthcare: Big Pharma */
+LLY, REGN, VRTX, BIIB, AMGN, ALNY, /* Healthcare: Biotech */
+TMO, DHR, MDT, SYK, ISRG, BDX, /* Healthcare: Devices & Tools */
+HCA, UHS, THC, DGX, LH, CVS, /* Healthcare: Providers & Services */
+
+HD, LOW, TGT, COST, WMT, DG, /* Consumer: Retail */
+PG, KO, PEP, CL, KMB, GIS, /* Consumer Staples: Household & Beverages */
+KR, ACI, SFM, WBA, SYY, UNFI, /* Consumer Staples: Food & Drug Retail */
+TSLA, F, GM, STLA, RIVN, LCID, /* Consumer Discretionary: Autos & EVs */
+NKE, LULU, UAA, VFC, TPR, RL, /* Consumer Discretionary: Apparel */
+MCD, SBUX, YUM, CMG, DPZ, QSR, /* Consumer Discretionary: Restaurants */
+AMZN, EBAY, ETSY, SHOP, MELI, W, /* Consumer Discretionary: E‑Commerce */
+
+BA, LMT, NOC, RTX, GD, TXT, /* Industrials: Aerospace & Defense */
+CAT, DE, PCAR, CMI, ETN, EMR, /* Industrials: Machinery */
+UNP, CSX, NSC, CNI, CP, KSU, /* Industrials: Railroads */
+FDX, UPS, EXPD, CHRW, GXO, XPO, /* Industrials: Logistics */
+HON, MMM, GE, ROP, ITW, PH, /* Industrials: Diversified Industrials */
+
+LIN, APD, ECL, SHW, ALB, CF, /* Materials: Chemicals */
+NUE, STLD, X, CLF, AA, CENX, /* Materials: Metals & Steel */
+FCX, SCCO, TECK, GOLD, NEM, AEM, /* Materials: Mining */
+IP, PKG, WRK, BCC, LPX, WY, /* Materials: Paper & Forest Products */
+
+NEE, DUK, SO, AEP, EXC, EIX, /* Utilities: Electric */
+SRE, D, WEC, XEL, PEG, ED, /* Utilities: Gas & Multi‑Utilities */
+AES, BEP, CWEN, AY, NEP, ORA, /* Utilities: Renewables */
+
+PLD, AMT, CCI, EQIX, DLR, SBAC, /* Real Estate: Industrial & Towers */
+SPG, MAC, FRT, O, WPC, NNN, /* Real Estate: Retail & Net Lease */
+AVB, EQR, ESS, CPT, MAA, UDR, /* Real Estate: Residential */
+VTR, WELL, PEAK, MPW, DOC, HTA, /* Real Estate: Healthcare REITs */
+BXP, VNO, SLG, ARE, KRC, HIW, /* Real Estate: Office */
+
+BTC-USD, ETH-USD, SOL-USD /* Crypto to USD */
+
+
+/* Canadian Exchanges */
+SHOP.TO, CSU.TO, OTEX.TO, DSG.TO, KXS.TO, LSPD.TO, /* Information Technology: Software */
+BB.TO, DND.TO, GIB.A.TO, TOI.TO, ENGH.TO, TCS.TO, /* Information Technology: Services */
+
+RY.TO, TD.TO, BNS.TO, BMO.TO, CM.TO, NA.TO, /* Financials: Big 6 Banks */
+MFC.TO, SLF.TO, GWO.TO, IFC.TO, POW.TO, FFH.TO, /* Financials: Insurance */
+GSY.TO, EQB.TO, HCG.TO, LB.TO, FSZ.TO, CIX.TO, /* Financials: Alt Lenders & Asset Managers */
+
+CNQ.TO, SU.TO, CVE.TO, IMO.TO, MEG.TO, WCP.TO, /* Energy: Integrated & Oil Sands */
+TOU.TO, ARX.TO, PEY.TO, BIR.TO, ERF.TO, NVA.TO, /* Energy: Natural Gas */
+ENB.TO, TRP.TO, PPL.TO, KEY.TO, GEI.TO, IPL.TO, /* Energy: Pipelines */
+CPG.TO, BTE.TO, TVE.TO, VET.TO, ATH.TO, /* Energy: High‑Beta E&P */
+
+TRI.TO, WCN.TO, TFII.TO, CNR.TO, CP.TO, TIH.TO, /* Industrials: Transportation */
+CAE.TO, MDA.TO, MAL.TO, RCH.TO, WSP.TO, STN.TO, /* Industrials: Engineering & Aerospace */
+MG.TO, ATS.TO, DOO.TO, RUS.TO, AFN.TO, ATA.TO, /* Industrials: Manufacturing */
+
+BCE.TO, T.TO, RCI.B.TO, QBR.B.TO, SJR.B.TO, /* Communication Services: Telecom */
+
+L.TO, MRU.TO, EMP.A.TO, WN.TO, ATD.TO, NWC.TO, /* Consumer Staples */
+CTC.A.TO, DOL.TO, BYD.TO, GIL.TO, GOOS.TO, LNF.TO, /* Consumer Discretionary */
+QSR.TO, MTY.TO, AW.UN.TO, BPF.UN.TO, PZA.TO, KEG.UN.TO, /* Consumer Discretionary: Restaurants */
+
+TRP.TO, FTS.TO, EMA.TO, AQN.TO, CU.TO, NPI.TO, /* Utilities */
+
+BAM.TO, BN.TO, GRT.UN.TO, CAR.UN.TO, REI.UN.TO, SRU.UN.TO, /* Real Estate: Diversified */
+AP.UN.TO, HR.UN.TO, DIR.UN.TO, IIP.UN.TO, BEI.UN.TO, MRG.UN.TO, /* Real Estate: Office/Industrial/Residential */
+
+ABX.TO, FNV.TO, AEM.TO, K.TO, YRI.TO, WPM.TO, /* Materials: Gold */
+TECK.B.TO, LUN.TO, FM.TO, IVN.TO, ERO.TO, HBM.TO, /* Materials: Base Metals */
+NTR.TO, CF.TO, CCO.TO, LIF.TO, WFT.TO, SJ.TO, /* Materials: Fertilizers/Uranium/Forestry */
+STLC.TO, X.TO, CAS.TO, RUS.TO, HLC.TO, /* Materials: Steel */
+
+GUD.TO, CSH.UN.TO, SIA.TO, WELL.TO, DR.TO, SIS.TO, /* Healthcare: Services */
+BLU.TO, CPH.TO, ACB.TO, WEED.TO, TLRY.TO, /* Healthcare: Pharma/Cannabis */
+
+BTC-CAD, ETH-CAD, SOL-CAD /* Crypto to CAD */
+
+
+/* Indexes */
+^GSPC, ^NDX, ^DJI, ^RUT, ^NYA, ^VIX, ^TNX, ^GSPTSE, ^SP500TR, ^SOX, /* Major US & Canadian Indexes */
+
+
+/* International Markets (US/CAN‑listed) */
+
+/* China */
+BABA, JD, BIDU, PDD, NTES, TCEHY, /* China ADRs */
+
+/* Taiwan */
+TSM, UMC, ASX, EWT, /* Taiwan ADRs & ETF */
+
+/* India */
+INFY, WIT, HDB, IBN, TCS.NS, EPI, /* India ADRs & ETF */
+
+/* United Kingdom */
+AZN, GSK, BP, SHEL, UL, BTI, /* UK ADRs */
+
+/* Europe */
+SNY, SAP, NOK, ERIC, ADDYY, RIO, /* Europe ADRs */
+
+/* Japan */
+TM, HMC, SONY, NMR, SMFG, EWJ, /* Japan ADRs & ETF */
+
+/* Latin America */
+MELI, PBR, VALE, SQM, ITUB, EWW, /* Latin America ADRs & ETF */
+
+/* Australia */
+BHP, RIO, WBK, EWA, /* Australia ADRs & ETF */
+
+/* Global Thematic */
+VEU, VXUS, ACWI, EEM, VWO, IXUS, /* Global & EM ETFs */
