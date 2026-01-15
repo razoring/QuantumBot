@@ -43,7 +43,7 @@ biases: {
 }
 """
 
-symbols = {"NVDA"}
+symbols = {"NVDA", "CHGG"}
 
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]
@@ -74,7 +74,6 @@ for symbol in symbols:
         if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
         origins = window["Close"].resample("W-FRI").last().dropna()
 
-
         for origin, price in origins.items(): #origin = fridays
             bias = {90:[biases[sector][ind][0][0], "ME"], 180:[biases[sector][ind][0][1], "ME"], 365:[biases[sector][ind][0][2], "D"], 730:[biases[sector][ind][0][3], "W"], 1825:[biases[sector][ind][0][4], "YS"]}
             rawCurves = charts.getBatchForecasts(window, bias, origin)
@@ -100,15 +99,15 @@ for symbol in symbols:
                 denom = (np.abs(targets) + np.abs(predictions))
                 diff = 2 * np.abs(predictions - targets) / (denom + 1e-8)
                 smape = np.mean(diff)
-                penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))
-                return smape + penalty
+                #penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))
+                return smape #+ penalty
 
-            cons = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-            bnds = tuple((0.0, 1.0) for _ in range(5))
+            constraints = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
+            bounds = tuple((0.0, 1.0) for _ in range(5)) #(min,max) weight for bounds
             initGuess = np.array(biases[sector].get(ind)[0])
             initGuess = initGuess / np.sum(initGuess)
 
-            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bnds, constraints=cons)
+            res = minimize(smapeLoss, initGuess, method='SLSQP', bounds=bounds, constraints=constraints)
             bestWeight = res.x.tolist()
             bestError = res.fun
             
@@ -121,8 +120,8 @@ for symbol in symbols:
             #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
             #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
             #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
-            #adjustment = 0.05 #equal
-            adjustment = 0.02 + (0.1 * min(bestError, 1.0)) # aggressive correction
+            adjustment = 0.05 #equal
+            #adjustment = 0.02 + (0.1 * min(bestError, 1.0)) # aggressive correction
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema
             biases[sector][ind] = [avgInd,countInd+1]
