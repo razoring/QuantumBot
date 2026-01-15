@@ -18,6 +18,7 @@ charts = functions.Charts()
 
 symbols = []
 with open("index\modular\symbols.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
+#with open("index\modular\symbols-test.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
 print(symbols)
 
 """
