@@ -22,10 +22,9 @@ with open("index\modular\symbols-test.txt", "r") as file: symbols = re.sub(r"/\*
 print(symbols)
 
 """
-biases: {
-    "global": [[0.2, 0.2, 0.2, 0.2, 0.2], 0] # ..., x] <-- count of items processed
+biases = {
     "technology": {
-        "weight": [[0.2, 0.2, 0.2, 0.2, 0.2], 0],
+        "weight": [[0.2, 0.2, 0.2, 0.2, 0.2], 0], # ..., x] <-- count of items processed
         "semiconductors": [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
     },
 }
@@ -33,8 +32,11 @@ biases: {
 
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]
-valid = ["2024-01-01","2024-12-31"]
-tests = ["2025-01-01","2025-12-31"]
+#valid = ["2024-01-01","2024-12-31"]
+#tests = ["2025-01-01","2025-12-31"]
+train = ["2020-01-01","2025-12-31"]
+valid = ["2020-01-01","2025-12-31"]
+tests = ["2020-01-01","2025-12-31"]
 
 started = datetime.now()
 #biases:dict[str,list] = {} #start fresh
@@ -115,7 +117,7 @@ for symbol in symbols:
             #adjustment = max(-0.03*math.sqrt(bestError)+0.06,0) #almost equal bias (bias to correct)
             #adjustment = 0.001/(bestError+0.02)+0.03*bestError # bias to correct and incorrect
             #adjustment = 0.003/(bestError+0.05)+0.01*bestError # bias to correct
-            adjustment = 0.05 #equal
+            adjustment = 0.1 #equal
             #adjustment = 0.02 + (0.1 * min(bestError, 1.0)) # aggressive correction
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             avgSect = [prevSect[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevSect))] #ema

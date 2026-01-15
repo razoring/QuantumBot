@@ -340,7 +340,7 @@ class Charts:
         sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"
 
-        index = biases.get(sector, {}).get(ind, [0.2,0.2,0.2,0.2,0.2])
+        index = biases[sector][ind][0]
         histories = {90: [index[0], "ME"], 180: [index[1], "ME"], 365: [index[2], "D"], 730: [index[3], "W"], 1825: [index[4], "YS"]}
 
         raw = self.getBatchForecasts(history=history, configs=histories, today=lastDate)
