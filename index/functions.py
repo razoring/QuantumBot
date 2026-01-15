@@ -195,11 +195,11 @@ class Charts:
         self._cache = OrderedDict() # {1746164675.3231642:["D":0.2,"W":0.2,"M":0.2,"Y":0.2]}
         self._thread = threading.Lock()
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
-        self._capacity = 64
-        self._inflections = 20 # number of bends
+        self._capacity = 64 # max cached items
+        self._inflections = 30 # number of bends
         self._flexibility = 0.05 #
-        self._range = 0.6 # up to what percentage of the history prophet learns from
-        self._samples = 3000 # how smooth, more = smoother
+        self._range = 0.8 # up to what percentage of the history prophet learns from
+        self._samples = 1000 # how smooth, more = smoother
         self._seasonality = 10
 
     def getBatchForecasts(self, history, configs, today):
