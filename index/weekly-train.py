@@ -36,6 +36,7 @@ symbols = {
 
 """
 biases: {
+    "global": [[0.2, 0.2, 0.2, 0.2, 0.2], 0] # ..., x] <-- count of items processed
     "technology": {
         "weight": [[0.2, 0.2, 0.2, 0.2, 0.2], 0],
         "semiconductors": [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
@@ -43,7 +44,7 @@ biases: {
 }
 """
 
-symbols = {"NVDA"}
+symbols = {"NVDA", "CHGG"}
 
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]

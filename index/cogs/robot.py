@@ -223,35 +223,38 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
 
-        if self.lookup(ticker,boolean=True) == False:
-            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
-            return
+            if self.lookup(ticker,boolean=True) == False:
+                await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                return
 
-        embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
-        embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
-        
-        selectedModel = int(model.value) if model else 2
-        warning = False
-
-        invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-        icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
-
-        img = charts.project(ticker, selectedModel, interaction.guild.name, invite.url, icon)
-        
-        if img is None:
-            warning = True
-            img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
-        if img:
-            img_copy = io.BytesIO(img.getvalue())
-            file = discord.File(img, filename="output.png")
-            embed.set_image(url="attachment://output.png")
+            embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
+            embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
             
-            feedback_view = Feedback(90, ticker, selectedModel, img_copy)
-            if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
+            selectedModel = int(model.value) if model else 2
+            warning = False
+
+            invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+            icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
+
+            img = charts.project(ticker, selectedModel, interaction.guild.name, invite.url, icon)
             
-            await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
+            if img is None:
+                warning = True
+                img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
+            if img:
+                img_copy = io.BytesIO(img.getvalue())
+                file = discord.File(img, filename="output.png")
+                embed.set_image(url="attachment://output.png")
+                
+                feedback_view = Feedback(90, ticker, selectedModel, img_copy)
+                if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
+                
+                await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
+        except:
+            await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
     @app_commands.describe(query="The input to validate")
