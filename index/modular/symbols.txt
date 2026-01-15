@@ -1,5 +1,5 @@
 /* US Exchanges */
-AAPL, MSFT, NVDA, AMD, INTC, MU, /* Technology: Semiconductors & General Tech */
+AAPL, MSFT, NVDA, AMD, INTC, MU, NVDA, /* Technology: Semiconductors & General Tech */
 AVGO, QCOM, TXN, ADI, ON, MCHP, /* Technology: Semiconductors (Analog/Digital Mix) */
 CRM, NOW, ADSK, INTU, SNOW, MDB, /* Technology: Software (Enterprise SaaS + Data) */
 ORCL, SAP, IBM, ACN, CTSH, DXC, /* Technology: IT Services & Legacy Software */

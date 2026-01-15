@@ -17,8 +17,8 @@ with warnings.catch_warnings(): warnings.filterwarnings("ignore", category=Runti
 charts = functions.Charts()
 
 symbols = []
-with open("index\modular\symbols.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
-#with open("index\modular\symbols-test.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
+#with open("index\modular\symbols.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
+with open("index\modular\symbols-test.txt", "r") as file: symbols = re.sub(r"/\*.*?\*/", "", file.read().replace("\n","").strip().replace(" ",""), flags=re.DOTALL)[:len(file.read())-1].split(",")
 print(symbols)
 
 """
@@ -87,10 +87,18 @@ for symbol in symbols:
                 diff = 2 * np.abs(predictions - targets) / (denom + 1e-8)
                 smape = np.mean(diff)
                 #penalty = tune * np.sum(w * np.log((w + 1e-8) * 5))
-                return smape #+ penalty
+                start = targets[0] if len(targets) > 0 else 0
+                end = predictions[-1]
+                penalty = 0
+                if start > 0:
+                    change = abs((end-start)/start)
+                    threshold = 0.25
+                    if change > threshold:
+                        penalty = (change-threshold)*2
+                return smape + penalty
 
             constraints = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-            bounds = tuple((0.0, 1.0) for _ in range(5)) #(min,max) weight for bounds
+            bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0)) #(min,max) weight for bounds
             initGuess = np.array(biases[sector].get(ind)[0])
             initGuess = initGuess / np.sum(initGuess)
 

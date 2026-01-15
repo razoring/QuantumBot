@@ -197,10 +197,10 @@ class Charts:
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64 # max cached items
         self._inflections = 50 # number of bends
-        self._flexibility = 0.05 # controls over/underfitting
-        self._range = 1 # up to what percentage of the history prophet learns from (0.0-1.0)
+        self._flexibility = 0.03 # controls over/underfitting
+        self._range = 0.85 # up to what percentage of the history prophet learns from (0.0-1.0)
         self._samples = 500 # how smooth, more = smoother
-        self._seasonality = 3 # controls over/underfitting of the seasons
+        self._seasonality = 10 # controls over/underfitting of the seasons
 
     def getBatchForecasts(self, history, configs, today):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
