@@ -31,7 +31,7 @@ symbols = {
     "GLD", "SLV", "GDX", "USO", "UNG",
     "MARA", "RIOT", "MSTR", "BRK-A",
     "^SPX", "^VIX", "EWZ", "EEM", "EWJ", "FXI", "VGK", "EFA", "EWU", "EWG", "EWQ", "EWC"
-    }
+}
 
 
 """
