@@ -151,7 +151,7 @@ class Robot(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         await interaction.response.defer()
         embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
-        txt = open("index/help.txt","r")
+        txt = open("index\modular\help.txt","r")
         embed.description = f"""{txt.read()}"""
         await interaction.followup.send(embed=embed, ephemeral=True)
 

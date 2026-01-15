@@ -335,7 +335,7 @@ class Charts:
         futureDays = np.arange(0, forward + 1)
         
         points = []
-        with open("index\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
+        with open("index\modular\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
         info = stock.info
         sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else "unknown"

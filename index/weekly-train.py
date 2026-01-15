@@ -39,7 +39,7 @@ tests = ["2025-01-01","2025-12-31"]
 
 started = datetime.now()
 #biases:dict[str,list] = {} #start fresh
-with open("index\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
+with open("index\modular\weights.txt","r") as file: biases = json.loads(file.readlines()[0])
 for symbol in symbols:
     stock = yf.Ticker(symbol)
     info = stock.info
@@ -116,5 +116,4 @@ for symbol in symbols:
             biases[sector]["weight"] = [avgSect,countSect+1]
             print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
 
-weights = open("index/weights.txt","w")
-weights.write(json.dumps(biases)+f"\n// {started}:{datetime.now()} ({datetime.now()-started})")
+with open("index\modular\weights.txt","w") as weights: weights.write(json.dumps(biases)+f"\n// {started}:{datetime.now()} ({datetime.now()-started})")
