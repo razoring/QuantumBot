@@ -43,7 +43,7 @@ biases: {
 }
 """
 
-symbols = {"NVDA", "CHGG"}
+symbols = {"NVDA"}
 
 #ranges = ["2023-01-01","2025-11-30"]
 train = ["2020-01-01","2023-12-31"]
