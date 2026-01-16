@@ -1,0 +1,21 @@
+IMPORTANT:
+Full cache system
+Full alerts implementation
+Self-training / Self cache clearing
+DM usage capabilities
+Implementation of the AI
+More in-depth telemetry
+
+TBD SOON:
+/me command (profile customization)
+Line chart for chart history
+Points system and leaderboard
+Convert points to credits
+
+FUTURE:
+Yahoo news command
+Compare command
+Customize Appearance
+Sponsors on the server tab (Monetization)
+Disable sponsors (premium subscription)
+Web dashboard

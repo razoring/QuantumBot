@@ -146,7 +146,6 @@ class Robot(commands.Cog):
         embed.description = desc
         return embed
 
-
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
         await interaction.response.defer()
@@ -223,7 +222,7 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
-        #try:
+        try:
             await interaction.response.defer()
 
             if self.lookup(ticker,boolean=True) == False:
@@ -253,8 +252,7 @@ class Robot(commands.Cog):
                 if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
                 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
-        #except:
-            #await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
+        except: await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
     @app_commands.describe(query="The input to validate")
