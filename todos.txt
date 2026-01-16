@@ -13,6 +13,7 @@ Points system and leaderboard
 Convert points to credits
 
 FUTURE:
+Vote on training symbols / view training symbols
 Yahoo news command
 Compare command
 Customize Appearance
