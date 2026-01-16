@@ -5,6 +5,7 @@ Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bo
 Full alerts implementation
 
 TBD SOON:
+Social media sentiment for predictions (https://socialscan.app/index.php)
 DM usage capabilities
 Implementation of the AI
 More in-depth telemetry
@@ -14,6 +15,7 @@ Points system and leaderboard
 Convert points to credits
 
 FUTURE:
+News sentiment for predictions (LLM)
 Yahoo news command
 Compare command
 Sponsors on the server tab (Monetization)
