@@ -1,4 +1,5 @@
 For detailed support, join the [support server](https://discord.gg/2sMTnQrKhS).
+*<?> indicates not required.
 ## Tickers:
 Returns top tickers across discord or checks whether your ticker is valid.
 ```/tickers <query>```
@@ -21,9 +22,9 @@ Returns the live quote and candlestick chart of the tickers up to the duration.
 Set reminders for when your ticker reaches a certain price or return the daily volatility.
 ```/alerts <ticker?>```
 - ticker: Valid Yahoo Finance ticker. (use /tickers to validate)
-## Stats:
-See infomation about yourself and the leaderboard.
-```/stats```
+## Me:
+Edit your preferences and see your profile.
+```/me```
 ## Configure:
 Requires administrator permissions. Configure bot channels, automations, link to dashboard, etc.
 ```/configure```

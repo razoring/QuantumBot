@@ -1,22 +1,23 @@
 IMPORTANT:
-Full cache system
+Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
+    Full cache system
+    Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
-Self-training / Self cache clearing
+
+TBD SOON:
 DM usage capabilities
 Implementation of the AI
 More in-depth telemetry
-
-TBD SOON:
-/me command (profile customization)
+/me command (profile/leaderboard access) --> generate a shareable image
 Line chart for chart history
 Points system and leaderboard
 Convert points to credits
 
 FUTURE:
-Vote on training symbols / view training symbols
 Yahoo news command
 Compare command
-Customize Appearance
 Sponsors on the server tab (Monetization)
+Sponsors on intial train (Monetization)
 Disable sponsors (premium subscription)
 Web dashboard
+Customize Appearance
