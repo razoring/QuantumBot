@@ -37,7 +37,7 @@ class Stamp:
         self.serverIcon = icon
 
     def _font(self, size: int):
-        return ImageFont.truetype(font="index/assets/Montserrat-Bold.ttf", size=size)
+        return ImageFont.truetype(font="bot/assets/Montserrat-Bold.ttf", size=size)
 
     def _rounded(self, image: Image.Image, radius: int) -> Image.Image:
         image = image.convert("RGBA")
@@ -50,10 +50,10 @@ class Stamp:
 
     def image(self, chart, displayLegend=True):
         if displayLegend:
-            main = Image.open("index/assets/predict.png").convert("RGBA")
+            main = Image.open("bot/assets/predict.png").convert("RGBA")
         else:
-            main = Image.open("index/assets/chart.png").convert("RGBA")
-        legend = Image.open("index/assets/legend.png").convert("RGBA")
+            main = Image.open("bot/assets/chart.png").convert("RGBA")
+        legend = Image.open("bot/assets/legend.png").convert("RGBA")
         chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
 
         img = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
@@ -75,7 +75,7 @@ class Stamp:
         except Exception:
             # fallback to bundled placeholder icon
             try:
-                serverIcon = Image.open("index/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
+                serverIcon = Image.open("bot/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
             except Exception:
                 # last-resort: create a blank icon
                 serverIcon = Image.new("RGBA", (93, 93), (112, 128, 144, 255))

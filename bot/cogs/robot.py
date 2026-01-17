@@ -201,7 +201,7 @@ class Robot(commands.Cog):
         embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
         
         invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-        icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
+        icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
         img = charts.history(ticker, duration, interaction.guild.name, invite.url, icon)
         if img:
@@ -236,7 +236,7 @@ class Robot(commands.Cog):
             warning = False
 
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-            icon = interaction.guild.icon.url if interaction.guild.icon else "index/assets/placeholderIcon.jpg"
+            icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
             img = charts.project(ticker, selectedModel, interaction.guild.name, invite.url, icon)
             
@@ -252,7 +252,9 @@ class Robot(commands.Cog):
                 if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
                 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
-        except: await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
+        except Exception as e:
+            print(e)
+            await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
     @app_commands.describe(query="The input to validate")
