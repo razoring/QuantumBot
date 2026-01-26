@@ -1,3 +1,4 @@
+import json
 import os
 from fastapi import FastAPI
 import psycopg2
@@ -9,12 +10,25 @@ load_dotenv()
 try:
     connection = psycopg2.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
     if connection is not None:
-        with connection.cursor() as cursor:
-            @app.get("/get/tickers/{ticker}")
-            def locateTicker(ticker):
-                result = cursor.execute(f"select id from Ticker where ticker = '{str(ticker).upper()}';")
-                print(str(ticker).upper(), result)
-                return {result}
+        @app.get("/get/tickers/{ticker}/id")
+        def locateTicker(ticker):
+            cursor = connection.cursor()
+
+            cursor.execute(f"select id from Ticker where ticker = '{str(ticker).upper()}';")
+            row = cursor.fetchone()
+
+            cursor.close()
+            return {"id": row[0] if row else None}
+        
+        @app.get("/get/tickers/{ticker}/data")
+        def dataTicker(ticker):
+            cursor = connection.cursor()
+            
+            cursor.execute(f"select * from Ticker where ticker = '{str(ticker).upper()}';")
+            row  = cursor.fetchall()
+
+            cursor.close()
+            return {json.dumps(row, )}
 except Exception as e:
     print(e.with_traceback())
 

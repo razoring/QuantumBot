@@ -7,8 +7,8 @@ create table Account(
 	exchange text default 'US',
 	preferences jsonb,
 	credits bigint default 0,
-	created timestamptz default now(),
-	updated timestamptz default now()
+	created text,
+	updated text
 );
 
 create table Sensitives(
@@ -18,7 +18,7 @@ create table Sensitives(
 	birthday text,
 	gender text,
 	race text,
-	updated timestamptz default now()
+	updated text
 );
 
 create table Alert (
@@ -26,7 +26,7 @@ create table Alert (
 	account bigint references Account(id) not null,
 	symbol text,
 	price double precision,
-	updated timestamptz default now()
+	updated text
 );
 
 create table Ticker(
@@ -38,14 +38,14 @@ create table Ticker(
 	accuracy double precision,
 	weight jsonb,
 	datapoints jsonb,
-	updated timestamptz default now()
+	updated text
 );
 
 create table Request (
 	id bigserial primary key,
 	ticker bigint references Ticker(id) not null, 
 	account bigint references Account(id) not null,
-	updated timestamptz default now()
+	updated text
 );
 
 create index RequestAnalytics on Request(account, ticker);
