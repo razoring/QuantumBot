@@ -309,7 +309,7 @@ class Charts:
 
         ticker = str(ticker).upper()
 
-        train = ["2020-01-01","2023-12-31"]
+        train = ["2020-01-01","2024-12-31"]
 
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
