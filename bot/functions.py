@@ -361,9 +361,12 @@ class Charts:
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
             print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-        cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
-        connection.commit()
-        cursor.close()
+        try:
+            cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
+            connection.commit()
+            print("Committed")
+        finally:
+            cursor.close()
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
