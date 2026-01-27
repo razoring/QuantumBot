@@ -364,8 +364,6 @@ class Charts:
         try:
             cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
             connection.commit()
-            print("Committed")
-        except Exception as e: print(e.with_traceback)
         finally: cursor.close()
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
