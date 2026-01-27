@@ -22,13 +22,17 @@ from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
 import themes
 import requests
-import ast
+import psycopg2 as pg
+import os
 
 #Setup
 matplotlib.use("Agg")
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled = True
 set_default_font(load_google_font("Montserrat", weight="bold"))
+
+connection = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
+if not connection: raise Exception("Cannot connect to database")
 
 class Stamp:
     def __init__(self, name, url, icon):
@@ -299,6 +303,63 @@ class Charts:
             penalty = (change - 0.30) * 2.0
         
         return smape + penalty
+
+    def liveTrain(self, ticker):
+        def clean(values:(list|tuple)): return clean(values[0]) if len(values) < 2 else values
+
+        ticker = str(ticker).upper()
+        
+        train = ["2020-01-01","2023-12-31"]
+
+        cursor = connection.cursor()
+        if not cursor: raise Exception("ERROR: Failed to create cursor")
+        cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
+        weight = cursor.fetchall()
+
+        weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0] if len(weight)<1 else weight = clean(weight) # full weight + processed
+        bestWeight = weight[0]
+
+        stock = yf.Ticker(ticker)
+        history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(train[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
+        if history.empty: return
+
+        window = history[train[0]:train[1]]
+        daily = window.resample("D").interpolate()
+        if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
+        origins = window["Close"].resample("W-FRI").last().dropna()
+
+        for origin, price in origins.items(): #origin = fridays
+            bias = {90:[bestWeight[0], "ME"], 180:[bestWeight[1], "ME"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "W"], 1825:[bestWeight[4], "YS"]}
+            rawCurves = self._forecast(window, bias, origin, forward=90)
+            
+            if rawCurves is None: continue
+            targetDates = [origin + timedelta(days=i) for i in range(90)]
+            validIndices = []
+            actuals = []
+            
+            for i, date in enumerate(targetDates):
+                d = date.tz_convert("America/New_York").tz_localize(None) if date.tzinfo is not None else date
+                if d in daily.index:
+                    validIndices.append(i)
+                    actuals.append(float(daily.loc[d, "Close"]))
+            
+            if not validIndices: continue
+            matrix = rawCurves[:, validIndices]
+            targets = np.array(actuals)
+
+            const = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
+            bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
+            initGuess = np.array(bias, dtype=float)
+            initGuess = initGuess / np.sum(initGuess)
+
+            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
+            bestWeight = res.x.tolist()
+            
+            prevInd, countInd = weight
+            adjustment = 0.07 #equal
+            avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
+            weight = [avgInd,countInd+1]
+        cursor.execute(f"update ticker set weight = '{bestWeight}' where ticker = '{ticker}';")
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90

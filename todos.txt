@@ -2,6 +2,7 @@ IMPORTANT:
 Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
     Full cache system
     Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
+    USE INTEGRATED DATABASE
 Full alerts implementation
 
 TBD SOON:
@@ -22,4 +23,5 @@ Sponsors on the server tab (Monetization)
 Sponsors on intial train (Monetization)
 Disable sponsors (premium subscription)
 Web dashboard
+Web API
 Customize Appearance
