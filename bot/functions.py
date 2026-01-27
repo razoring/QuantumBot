@@ -305,10 +305,10 @@ class Charts:
         return smape + penalty
 
     def liveTrain(self, ticker):
-        def clean(values:(list|tuple)): return clean(values[0]) if len(values) < 2 else values
+        def clean(values): return clean(values[0]) if len(values) < 2 else values
 
         ticker = str(ticker).upper()
-        
+
         train = ["2020-01-01","2023-12-31"]
 
         cursor = connection.cursor()
@@ -316,7 +316,7 @@ class Charts:
         cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
         weight = cursor.fetchall()
 
-        weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0] if len(weight)<1 else weight = clean(weight) # full weight + processed
+        weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0] if len(weight)==0 else clean(weight) # full weight + processed
         bestWeight = weight[0]
 
         stock = yf.Ticker(ticker)
@@ -349,17 +349,19 @@ class Charts:
 
             const = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
             bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
-            initGuess = np.array(bias, dtype=float)
+            initGuess = np.array(bestWeight, dtype=float)
             initGuess = initGuess / np.sum(initGuess)
 
             res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
             bestWeight = res.x.tolist()
+            bestError = res.fun
             
             prevInd, countInd = weight
             adjustment = 0.07 #equal
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
-            weight = [avgInd,countInd+1]
-        cursor.execute(f"update ticker set weight = '{bestWeight}' where ticker = '{ticker}';")
+            weights = [avgInd,countInd+1]
+            print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
+        cursor.execute(f"update ticker set weight = '{weights}' where ticker = '{ticker}';")
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90

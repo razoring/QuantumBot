@@ -80,6 +80,7 @@ for symbol in symbols:
 
         const = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
         bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
+        print(biases[sector].get(ind)[0])
         initGuess = np.array(biases[sector].get(ind)[0], dtype=float)
         initGuess = initGuess / np.sum(initGuess)
 
