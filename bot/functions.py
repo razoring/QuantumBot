@@ -374,7 +374,7 @@ class Charts:
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
             print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-        timestamp = math.floor(int(datetime.now().timestamp()))
+        timestamp = str(math.floor(int(datetime.now().timestamp())))
         if mode == 0: cursor.execute(f"update ticker set weight = '{weights}' where ticker = '{ticker}';")
         elif mode == 1: cursor.execute(f"""insert into ticker(ticker, sector, industry, active, accuracy, weight, updated) values ('{ticker}', '{ind}','{sector}', true, {bestError}, '{weights}', '{timestamp}')""")
         connection.commit()
