@@ -304,7 +304,7 @@ class Charts:
         
         return smape + penalty
 
-    def liveTrain(self, ticker):
+    def _liveTrain(self, ticker):
         def clean(values): return clean(values[0]) if len(values) < 2 else values
 
         ticker = str(ticker).upper()
@@ -314,7 +314,7 @@ class Charts:
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
         cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
-        weight = cursor.fetchall()
+        weight = cursor.fetchone()
 
         weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0] if len(weight)==0 else clean(weight) # full weight + processed
         bestWeight = weight[0]
@@ -328,6 +328,8 @@ class Charts:
         if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
         origins = window["Close"].resample("W-FRI").last().dropna()
 
+        bias = None
+        weights = None
         for origin, price in origins.items(): #origin = fridays
             bias = {90:[bestWeight[0], "ME"], 180:[bestWeight[1], "ME"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "W"], 1825:[bestWeight[4], "YS"]}
             rawCurves = self._forecast(window, bias, origin, forward=90)
@@ -361,10 +363,9 @@ class Charts:
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
             print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-        try:
-            cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
-            connection.commit()
-        finally: cursor.close()
+        cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
+        connection.commit()
+        cursor.close()
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
@@ -379,7 +380,13 @@ class Charts:
         quantiles = np.linspace(0.05, 0.95, 11)
         futureDays = np.arange(0, forward + 1) # 0 to 90 (91 points)
 
-        histories = {90: [0.2, "ME"], 180: [0.2, "ME"], 365: [0.2, "D"], 730: [0.2, "W"], 1825: [0.2, "YS"]} #fallbacks
+        cursor = connection.cursor()
+        cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
+        weight = cursor.fetchone()
+        if len(weight) == 0: bias = weight[0]
+        else: self._liveTrain(ticker=ticker)
+        print(bias)
+        histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
 
         # live optimization mini backtest on the spot: 
         startDate = lastDate - timedelta(days=90)
