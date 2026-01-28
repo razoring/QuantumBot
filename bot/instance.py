@@ -52,5 +52,4 @@ async def globalsync(ctx):
     await bot.tree.sync()
     await msg.edit(content="Global Sync Complete.")
 
-if __name__ == "__main__":
-    bot.run(TOKEN)
+if __name__ == "__main__": bot.run(TOKEN)

@@ -3,6 +3,7 @@ import os
 import re
 import typing
 import datetime
+import asyncio
 from urllib.parse import urlparse as url
 
 import discord
@@ -100,7 +101,7 @@ class Feedback(discord.ui.View):
         self.file.seek(0)
         hook = DiscordWebhook(url=WEBHOOK, content=f"Rating: **{rating}**, Version: {getVersion()}, Ticker: {self.ticker}, Model: {self.model}, Timestamp: {datetime.datetime.now()}") 
         hook.add_file(file=self.file, filename="output.png")
-        hook.execute()
+        await asyncio.to_thread(hook.execute)
         
         items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
         for item in items_to_remove: self.remove_item(item)
@@ -203,7 +204,7 @@ class Robot(commands.Cog):
         invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
         icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-        img = charts.history(ticker, duration, interaction.guild.name, invite.url, icon)
+        img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon)
         if img:
             file = discord.File(img, filename="output.png")
             embed.set_image(url="attachment://output.png")
@@ -238,11 +239,11 @@ class Robot(commands.Cog):
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
             icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-            img = charts.project(ticker, selectedModel, interaction.guild.name, invite.url, icon)
+            img = await asyncio.to_thread(charts.project, ticker, selectedModel, interaction.guild.name, invite.url, icon)
             
             if img is None:
                 warning = True
-                img = charts.project(ticker, 1, interaction.guild.name, invite.url, icon)
+                img = await asyncio.to_thread(charts.project, ticker, 1, interaction.guild.name, invite.url, icon)
             if img:
                 img_copy = io.BytesIO(img.getvalue())
                 file = discord.File(img, filename="output.png")
@@ -253,7 +254,7 @@ class Robot(commands.Cog):
                 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
         except Exception as e:
-            print(e)
+            print(e.with_traceback)
             await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")

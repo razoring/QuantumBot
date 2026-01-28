@@ -2,6 +2,7 @@ from collections import OrderedDict
 import io
 import json
 import logging
+import math
 import threading
 import time
 import numpy as np
@@ -304,9 +305,9 @@ class Charts:
         
         return smape + penalty
 
-    def _liveTrain(self, ticker):
-        def clean(values): return clean(values[0]) if len(values) < 2 else values
+    def clean(self, values): return self.clean(values[0]) if len(values) < 2 else values
 
+    def _liveTrain(self, ticker):
         ticker = str(ticker).upper()
 
         train = ["2020-01-01","2024-12-31"]
@@ -314,12 +315,22 @@ class Charts:
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
         cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
-        weight = cursor.fetchone()
+        row = cursor.fetchone()
+        
+        mode = 0 # 0:create, 1:update
+        if not row:
+            weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+            mode = 0
+        else:
+            weight = self.clean(row[0]) 
+            mode = 1
 
-        weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0] if len(weight)==0 else clean(weight) # full weight + processed
         bestWeight = weight[0]
 
         stock = yf.Ticker(ticker)
+        info = stock.info
+        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
         history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(train[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
         if history.empty: return
 
@@ -363,12 +374,17 @@ class Charts:
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
             print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-        cursor.execute(f"update ticker set weight = '{json.dumps(weights)}' where ticker = '{ticker}';")
+        timestamp = math.floor(int(datetime.now().timestamp()))
+        if mode == 0: cursor.execute(f"update ticker set weight = '{weights}' where ticker = '{ticker}';")
+        elif mode == 1: cursor.execute(f"""insert into ticker(ticker, sector, industry, active, accuracy, weight, updated) values ('{ticker}', '{ind}','{sector}', true, {bestError}, '{weights}', '{timestamp}')""")
         connection.commit()
         cursor.close()
+        print(weights)
+        return weights
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
         forward = 90
+        ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
         history = stock.history(period="5y", interval="1d") if model != 0 else stock.history(period="1wk") # use 5y for extrapolation, use 1wk for implied (only needed for prev values to display) 
         if history.empty: return None
@@ -383,8 +399,9 @@ class Charts:
         cursor = connection.cursor()
         cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
         weight = cursor.fetchone()
-        if len(weight) == 0: bias = weight[0]
-        else: self._liveTrain(ticker=ticker)
+        if weight is not None and len(weight) != 0: bias = weight
+        else: bias = self._liveTrain(ticker=ticker)
+        bias = self.clean(bias)[0]
         print(bias)
         histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
 
