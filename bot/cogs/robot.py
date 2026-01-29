@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import traceback
 import typing
 import datetime
 import asyncio
@@ -254,7 +255,7 @@ class Robot(commands.Cog):
                 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
         except Exception as e:
-            print(e.with_traceback)
+            traceback.print_exc()
             await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")

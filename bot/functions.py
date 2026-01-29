@@ -202,20 +202,29 @@ class Charts:
         self._thread = threading.Lock()
         self._ttl = 60*60*24 # 60 seconds = 60 minutes = 24 hours before expiry
         self._capacity = 64 # max cached items
-        self._inflections = 50 # number of bends
+        self._inflections = 20 # number of bends
         self._flexibility = 0.05 # controls over/underfitting
         self._range = 0.8 # up to what percentage of the history prophet learns from (0.0-1.0)
         self._samples = 500 # how smooth, more = smoother
         self._seasonality = 10 # controls over/underfitting of the seasons
     
-    def _forecast(self, history, configs, today, forward=90):
+    def _forecast(self, stock, history, configs, today, forward=90):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
         if today not in history.index:
             locs = history.index.get_indexer([today], method='pad')
             if locs[0] == -1: return None
             lastDate = history.index[locs[0]]
-        else:
-            lastDate = today
+        else: lastDate = today
+
+        earnings = None
+        dates = stock.get_earnings_dates()
+        if dates is not None and not dates.empty:
+            earnings = pd.DataFrame({
+                'holiday': 'earnings',
+                'ds': dates.index.tz_localize(None), # Remove timezone
+                'lower_window': 0,
+                'upper_window': 1, # Impact usually felt day-of and day-after
+            })
 
         curPrice = history.loc[lastDate]["Close"]
         results = []
@@ -230,8 +239,7 @@ class Charts:
                 continue
             
             key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), "LOGISTIC_V2") # check cache (WITH check to make sure cache is on version 2 running prophet logistic config)
-            with self._thread:
-                cached = self._cache.get(key)
+            with self._thread: cached = self._cache.get(key)
             
             if cached is not None:
                 results.append(cached)
@@ -250,11 +258,12 @@ class Charts:
             # 5. Prophet Configuration
             config = ph(
                 growth='logistic', # new system has cap and floor instead of linear infinite approximation
+                holidays=earnings,
                 daily_seasonality=False, 
                 yearly_seasonality=True, 
                 weekly_seasonality=True, 
                 seasonality_prior_scale=self._seasonality,
-                n_changepoints=20, #reduction for overfitting
+                n_changepoints=self._inflections, #reduction for overfitting
                 changepoint_prior_scale=self._flexibility, # how stiff/elastic trend is
                 changepoint_range=self._range,
                 #uncertainty_samples=self._samples,
@@ -310,7 +319,7 @@ class Charts:
     def _liveTrain(self, ticker):
         ticker = str(ticker).upper()
 
-        train = ["2020-01-01","2024-12-31"]
+        train = ["2020-01-01","2022-12-31"]
 
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
@@ -318,12 +327,13 @@ class Charts:
         row = cursor.fetchone()
         
         mode = 0 # 0:create, 1:update
-        if not row:
-            weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
-            mode = 0
-        else:
+        print(row, len(json.dumps(row)))
+        if row and len(json.dumps(row)) > 1:
             weight = self.clean(row[0]) 
             mode = 1
+        else:
+            weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+            mode = 0
 
         bestWeight = weight[0]
 
@@ -343,7 +353,7 @@ class Charts:
         weights = None
         for origin, price in origins.items(): #origin = fridays
             bias = {90:[bestWeight[0], "ME"], 180:[bestWeight[1], "ME"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "W"], 1825:[bestWeight[4], "YS"]}
-            rawCurves = self._forecast(window, bias, origin, forward=90)
+            rawCurves = self._forecast(stock, window, bias, origin, forward=90)
             
             if rawCurves is None: continue
             targetDates = [origin + timedelta(days=i) for i in range(90)]
@@ -373,13 +383,12 @@ class Charts:
             adjustment = 0.07 #equal
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
-            print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
+            #print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
         timestamp = str(math.floor(int(datetime.now().timestamp())))
         if mode == 1: cursor.execute(f"update ticker set weight = '{weights}' where ticker = '{ticker}';")
         elif mode == 0: cursor.execute(f"""insert into ticker(ticker, sector, industry, active, accuracy, weight, updated) values ('{ticker}', '{ind}','{sector}', true, {bestError}, '{weights}', '{timestamp}')""")
         connection.commit()
         cursor.close()
-        print(weights)
         return weights
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon):
@@ -397,12 +406,23 @@ class Charts:
         futureDays = np.arange(0, forward + 1) # 0 to 90 (91 points)
 
         cursor = connection.cursor()
-        cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
-        weight = cursor.fetchone()
-        if weight is not None and len(weight) != 0: bias = weight
-        else: bias = self._liveTrain(ticker=ticker)
-        bias = self.clean(bias)[0]
+        cursor.execute(f"select weight, updated from ticker where ticker = '{ticker}'")
+        rows = cursor.fetchone()
+
+        bias = None
+        train = True
+        if rows is not None:
+            if len(json.dumps(rows)) > 1:
+                rows = self.clean(rows)
+                weight = rows[0]
+                updated = time.time()-int(rows[1])
+                if updated < 432000: # 432000:5d in s
+                    bias = weight
+                    train = False
+        if train: bias = self._liveTrain(ticker=ticker)
+        bias = bias[0]
         print(bias)
+
         histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
 
         # live optimization mini backtest on the spot: 
@@ -411,7 +431,7 @@ class Charts:
         actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward] # truncate just in case
         
         if len(actuals) > 20:
-            raw = self._forecast(window, histories, startDate, forward=len(actuals))
+            raw = self._forecast(stock, window, histories, startDate, forward=len(actuals))
             const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
             bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
             
@@ -420,7 +440,7 @@ class Charts:
             bestWeight = result.x
         else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
 
-        future = self._forecast(history, histories, lastDate, forward=forward+1)
+        future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
         if future is None: return None
         prophetTrend = np.dot(bestWeight, future)
         prophetSigma = 3
