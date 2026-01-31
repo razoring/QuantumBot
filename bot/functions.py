@@ -316,7 +316,7 @@ class Charts:
 
     def clean(self, values): return self.clean(values[0]) if len(values) < 2 else values
 
-    def _liveTrain(self, ticker):
+    def _liveTrain(self, ticker, retrain):
         ticker = str(ticker).upper()
 
         train = ["2020-01-01","2022-12-31"]
@@ -327,8 +327,7 @@ class Charts:
         row = cursor.fetchone()
         
         mode = 0 # 0:create, 1:update
-        print(row, len(json.dumps(row)))
-        if row and len(json.dumps(row)) > 1:
+        if retrain:
             weight = self.clean(row[0]) 
             mode = 1
         else:
@@ -411,17 +410,19 @@ class Charts:
 
         bias = None
         train = True
+        retrain = False
         if rows is not None:
             if len(json.dumps(rows)) > 1:
                 rows = self.clean(rows)
-                weight = rows[0]
+                weight:list = rows[0]
                 updated = time.time()-int(rows[1])
-                if updated < 432000: # 432000:5d in s
-                    bias = weight
-                    train = False
-        if train: bias = self._liveTrain(ticker=ticker)
+                if weight:
+                    if updated < 432000: # 432000 = 5d in s
+                        bias = weight
+                        train = False
+                    retrain = True
+        if train: bias = self._liveTrain(ticker=ticker, retrain=retrain)
         bias = bias[0]
-        print(bias)
 
         histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
 
