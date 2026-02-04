@@ -25,7 +25,6 @@ GIT_TOKEN = os.getenv("GIT_TOKEN")
 
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
-charts = functions.Charts()
 humanizer = functions.Humanizer()
 git = Github(auth=Auth.Token(GIT_TOKEN))
 
@@ -189,6 +188,7 @@ class Robot(commands.Cog):
         app_commands.Choice(name="Maximum displayable (all)", value="max"),
     ])
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
+        charts = functions.Charts()
         await interaction.response.defer()
         
         sanity = self.lookup(ticker,boolean=True)
@@ -225,6 +225,7 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
         #try:
+            charts = functions.Charts()
             await interaction.response.defer()
 
             if self.lookup(ticker,boolean=True) == False:
