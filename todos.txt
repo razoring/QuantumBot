@@ -4,6 +4,7 @@ Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bo
     Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
     USE INTEGRATED DATABASE
 Full alerts implementation
+Accuracy as of date labels
 
 TBD SOON:
 Social media sentiment for predictions (https://socialscan.app/index.php)
