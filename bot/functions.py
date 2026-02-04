@@ -318,14 +318,13 @@ class Charts:
         change = abs((pEnd-pStart)/pStart)
         penalty = 0
         penalty = tune*np.sum(w*np.log((w+1e-8)*5)) #normalization
-        if change > 0.30: 
-            penalty = (change - 0.30) * 2.0
+        if change > 0.30: penalty = (change - 0.30) * 2.0
         
         return smape + penalty
 
     def clean(self, values): return self.clean(values[0]) if len(values) < 2 else values
 
-    def _liveTrain(self, ticker, retrain):
+    def _liveTrain(self, ticker):
         ticker = str(ticker).upper()
 
         train = ["2020-01-01","2022-12-31"]
