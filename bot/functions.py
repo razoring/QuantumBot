@@ -441,7 +441,6 @@ class Charts:
 
         bias = None
         train = True
-        retrain = False
         if rows is not None:
             if len(json.dumps(rows)) > 1:
                 rows = self.clean(rows)
@@ -451,8 +450,7 @@ class Charts:
                     if updated < 432000: # 432000 = 5d in s
                         bias = weight
                         train = False
-                    retrain = True
-        if train: bias = self._liveTrain(ticker=ticker, retrain=retrain)
+        if train: bias = self._liveTrain(ticker=ticker)
         if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
         bias = bias[0]
 
