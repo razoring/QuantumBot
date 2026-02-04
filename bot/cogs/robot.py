@@ -265,4 +265,8 @@ class Robot(commands.Cog):
         await interaction.response.defer()
         await interaction.followup.send(embed=self.lookup(query=query))
 
+    @app_commands.command(name="me", description="Display account information (hidden from others)")
+    async def me():
+        pass
+
 async def setup(bot): await bot.add_cog(Robot(bot))
