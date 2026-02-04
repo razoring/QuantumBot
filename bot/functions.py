@@ -338,16 +338,10 @@ class Charts:
 
         default_weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
         # If there's an existing row, use it as starting weight and mark as update; otherwise create defaults
-        if row is None:
-            mode = 0  # create
-            weight = default_weight
+        if row is None: weight = default_weight
         else:
-            mode = 1  # update
-            try:
-                weight = self.clean(row[0])
-            except Exception:
-                logging.warning(f"Existing DB row for {ticker} had invalid weight format; using default weight")
-                weight = default_weight
+            try: weight = self.clean(row[0])
+            except Exception: weight = default_weight
 
         bestWeight = weight[0]
 
@@ -394,34 +388,23 @@ class Charts:
             bestError = res.fun
             
             prevInd, countInd = weight
-            adjustment = 0.07 #equal
+            adjustment = 0.05 #equal
             avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
             weights = [avgInd,countInd+1]
             #print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
         timestamp = str(math.floor(int(datetime.now().timestamp())))
-        # If training didn't produce new weights, keep the previous weight instead of writing None
-        if weights is None:
-            logging.info(f"No new weights computed for {ticker}; falling back to existing weight")
-            weights = weight
+        if weights is None: weights = weight
 
-        # Ensure weights and numeric values are native Python types that JSON/psycopg2 can handle
-        def _to_builtin(o):
-            # numpy scalar -> native python scalar
-            if isinstance(o, np.generic):
-                return o.item()
-            # numpy arrays -> lists
-            if isinstance(o, (np.ndarray,)):
-                return o.tolist()
-            # fallback
+        def _serialize(o):
+            if isinstance(o, np.generic): return o.item() # numpy scalar -> native python scalar
+            if isinstance(o, (np.ndarray,)): return o.tolist() # numpy arrays -> lists
             raise TypeError(f"Type {type(o)} not JSON serializable")
 
-        weights_serialized = json.dumps(weights, default=_to_builtin)
+        serialized = json.dumps(weights, default=_serialize)
 
-        # accuracy from optimizer may be numpy types; ensure native float
-        acc = float(bestError) if 'bestError' in locals() and bestError is not None else 0.0
+        acc = float(bestError) if 'bestError' in locals() and bestError is not None else 0.0 # accuracy from optimizer may be numpy types; ensure native float
 
-        logging.debug(f"Writing ticker={ticker} acc={acc} weight={weights_serialized}")
-        # Upsert: insert new row or update existing one. Ensure correct column order: (ticker, sector, industry)
+        logging.debug(f"Writing ticker={ticker} acc={acc} weight={serialized}")
         cursor.execute(
             """
             INSERT INTO ticker (ticker, sector, industry, active, accuracy, weight, updated)
@@ -434,8 +417,7 @@ class Charts:
                 weight = EXCLUDED.weight,
                 updated = EXCLUDED.updated;
             """,
-            (ticker, sector, ind, acc, weights_serialized, timestamp)
-        )
+            (ticker, sector, ind, acc, serialized, timestamp))
         connection.commit()
         cursor.close()
         return weights
@@ -471,12 +453,8 @@ class Charts:
                         bias = weight
                         train = False
                     retrain = True
-        if train:
-            bias = self._liveTrain(ticker=ticker, retrain=retrain)
-        # Ensure we have a usable bias; fallback to sensible defaults when training fails or returns None
-        if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0:
-            logging.warning(f"_liveTrain returned no bias for {ticker}; falling back to default weights")
-            bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+        if train: bias = self._liveTrain(ticker=ticker, retrain=retrain)
+        if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
         bias = bias[0]
 
         histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
