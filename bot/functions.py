@@ -274,33 +274,22 @@ class Charts:
                 # Fit/predict can produce numerical overflow warnings (logistic growth exp); suppress them and sanitize outputs
                 with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
                     config.fit(data)
-                    # future df
                     future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
                     future['cap'] = cap
                     future['floor'] = floor
                     fcst = config.predict(future)
 
                 rawTrend = fcst.tail(forward)["yhat"].values
-                # sanitize numerical issues (inf/nan) by replacing with current price
                 rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
 
                 # attach to current day value (offset)
-                if len(rawTrend) > 0:
-                    curve = rawTrend + (curPrice - rawTrend[0])
-                    #curve = np.clip(curve, floor, cap) #clip incase past limits
+                if len(rawTrend) > 0: curve = rawTrend + (curPrice - rawTrend[0]) #curve = np.clip(curve, floor, cap) #clip incase past limits
                 else: curve = np.full(forward, curPrice)
 
-                # if curve contains any non-finite values, fallback to flat curve
-                if not np.all(np.isfinite(curve)):
-                    logging.warning(f"Detected non-finite Prophet curve at horizon {h}; using flat curve")
-                    curve = np.full(forward, curPrice)
-
+                if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
                 with self._thread: self._cache[key] = curve
                 results.append(curve)
-            except Exception:
-                # flat line on error
-                logging.exception(f"Prophet training/predict failed for with horizon {h}")
-                results.append(np.full(forward, curPrice))
+            except Exception: results.append(np.full(forward, curPrice))
 
         return np.vstack(results)
 
@@ -439,53 +428,56 @@ class Charts:
         cursor.execute(f"select weight, updated from ticker where ticker = '{ticker}'")
         rows = cursor.fetchone()
 
-        bias = None
-        train = True
-        if rows is not None:
-            if len(json.dumps(rows)) > 1:
-                rows = self.clean(rows)
-                weight:list = rows[0]
-                updated = time.time()-int(rows[1])
-                if weight:
-                    if updated < 432000: # 432000 = 5d in s
-                        bias = weight
-                        train = False
-        if train: bias = self._liveTrain(ticker=ticker)
-        if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
-        bias = bias[0]
-
-        histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
-
-        # live optimization mini backtest on the spot: 
-        startDate = lastDate - timedelta(days=90)
-        window = history[history.index <= startDate]
-        actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward] # truncate just in case
-        
-        if len(actuals) > 20:
-            raw = self._forecast(stock, window, histories, startDate, forward=len(actuals))
-            const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
-            bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
-            
-            guess = [0.2, 0.2, 0.2, 0.2, 0.2]
-            result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
-            bestWeight = result.x
-        else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
-
-        future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
-        if future is None: return None
-        prophetTrend = np.dot(bestWeight, future)
-        prophetSigma = 3
-        
-        points = []
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
-        if model == 1:
-            if prophetTrend is None: raise ValueError("Prophet generation failed")
-            points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
-        elif model == 2 and len(points) > 0 and prophetTrend is not None:
-            spread = points - curPrice
-            points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
+        
+        # skip backtest for IV only
+        points = []
+        if model != 0: # only train if necessary
+            bias = None
+            train = True
+            if rows is not None:
+                if len(json.dumps(rows)) > 1:
+                    rows = self.clean(rows)
+                    weight:list = rows[0]
+                    updated = time.time()-int(rows[1])
+                    if weight:
+                        if updated < 432000: # 432000 = 5d in s
+                            bias = weight
+                            train = False
+            if train: bias = self._liveTrain(ticker=ticker)
+            if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+            bias = bias[0]
+
+            histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
+            
+            # live optimization mini backtest on the spot: 
+            startDate = lastDate - timedelta(days=90)
+            window = history[history.index <= startDate]
+            actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward] # truncate just in case
+            
+            if len(actuals) > 20:
+                raw = self._forecast(stock, window, histories, startDate, forward=len(actuals))
+                const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
+                bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
+                
+                guess = [0.2, 0.2, 0.2, 0.2, 0.2]
+                result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
+                bestWeight = result.x
+            else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+
+            future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
+            if future is None: return None
+            prophetTrend = np.dot(bestWeight, future)
+            prophetSigma = 3
+            
+            if model == 1:
+                if prophetTrend is None: raise ValueError("Prophet generation failed")
+                points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
+            elif model == 2 and len(points) > 0 and prophetTrend is not None:
+                spread = points - curPrice
+                points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
 
         if len(points) == 0: return None
         points = np.maximum(points, 0.01)
@@ -555,7 +547,7 @@ class Charts:
                 for q in quantiles:
                     z = norm.ppf(q)
                     # Geometric Brownian Motion
-                    projection = curPrice * np.exp(-0.5 * meanIV**2 * tYears + meanIV * np.sqrt(tYears) * z)
+                    projection = curPrice*np.exp(-1*meanIV**2*tYears+meanIV*np.sqrt(tYears)*z)+0.04
                     expPrices.append(projection)
                 
                 anchorsX.append(max(daysDiff, 1))
