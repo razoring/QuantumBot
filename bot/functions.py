@@ -271,26 +271,35 @@ class Charts:
             )
             
             try:
-                config.fit(data)
-                
-                # future df
-                future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
-                future['cap'] = cap
-                future['floor'] = floor
-                
-                fcst = config.predict(future)
+                # Fit/predict can produce numerical overflow warnings (logistic growth exp); suppress them and sanitize outputs
+                with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+                    config.fit(data)
+                    # future df
+                    future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
+                    future['cap'] = cap
+                    future['floor'] = floor
+                    fcst = config.predict(future)
+
                 rawTrend = fcst.tail(forward)["yhat"].values
-                
+                # sanitize numerical issues (inf/nan) by replacing with current price
+                rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
+
                 # attach to current day value (offset)
                 if len(rawTrend) > 0:
                     curve = rawTrend + (curPrice - rawTrend[0])
                     #curve = np.clip(curve, floor, cap) #clip incase past limits
                 else: curve = np.full(forward, curPrice)
 
+                # if curve contains any non-finite values, fallback to flat curve
+                if not np.all(np.isfinite(curve)):
+                    logging.warning(f"Detected non-finite Prophet curve at horizon {h}; using flat curve")
+                    curve = np.full(forward, curPrice)
+
                 with self._thread: self._cache[key] = curve
                 results.append(curve)
             except Exception:
                 # flat line on error
+                logging.exception(f"Prophet training/predict failed for with horizon {h}")
                 results.append(np.full(forward, curPrice))
 
         return np.vstack(results)
@@ -323,16 +332,22 @@ class Charts:
 
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
-        cursor.execute(f"select weight from ticker where ticker = '{ticker}'")
+        # parameterized select to check if ticker already exists
+        cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
         row = cursor.fetchone()
-        
-        mode = 0 # 0:create, 1:update
-        if retrain:
-            weight = self.clean(row[0]) 
-            mode = 1
+
+        default_weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+        # If there's an existing row, use it as starting weight and mark as update; otherwise create defaults
+        if row is None:
+            mode = 0  # create
+            weight = default_weight
         else:
-            weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
-            mode = 0
+            mode = 1  # update
+            try:
+                weight = self.clean(row[0])
+            except Exception:
+                logging.warning(f"Existing DB row for {ticker} had invalid weight format; using default weight")
+                weight = default_weight
 
         bestWeight = weight[0]
 
@@ -384,8 +399,43 @@ class Charts:
             weights = [avgInd,countInd+1]
             #print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
         timestamp = str(math.floor(int(datetime.now().timestamp())))
-        if mode == 1: cursor.execute(f"update ticker set weight = '{weights}' where ticker = '{ticker}';")
-        elif mode == 0: cursor.execute(f"""insert into ticker(ticker, sector, industry, active, accuracy, weight, updated) values ('{ticker}', '{ind}','{sector}', true, {bestError}, '{weights}', '{timestamp}')""")
+        # If training didn't produce new weights, keep the previous weight instead of writing None
+        if weights is None:
+            logging.info(f"No new weights computed for {ticker}; falling back to existing weight")
+            weights = weight
+
+        # Ensure weights and numeric values are native Python types that JSON/psycopg2 can handle
+        def _to_builtin(o):
+            # numpy scalar -> native python scalar
+            if isinstance(o, np.generic):
+                return o.item()
+            # numpy arrays -> lists
+            if isinstance(o, (np.ndarray,)):
+                return o.tolist()
+            # fallback
+            raise TypeError(f"Type {type(o)} not JSON serializable")
+
+        weights_serialized = json.dumps(weights, default=_to_builtin)
+
+        # accuracy from optimizer may be numpy types; ensure native float
+        acc = float(bestError) if 'bestError' in locals() and bestError is not None else 0.0
+
+        logging.debug(f"Writing ticker={ticker} acc={acc} weight={weights_serialized}")
+        # Upsert: insert new row or update existing one. Ensure correct column order: (ticker, sector, industry)
+        cursor.execute(
+            """
+            INSERT INTO ticker (ticker, sector, industry, active, accuracy, weight, updated)
+            VALUES (%s, %s, %s, true, %s, %s, %s)
+            ON CONFLICT (ticker) DO UPDATE SET
+                sector = EXCLUDED.sector,
+                industry = EXCLUDED.industry,
+                active = EXCLUDED.active,
+                accuracy = EXCLUDED.accuracy,
+                weight = EXCLUDED.weight,
+                updated = EXCLUDED.updated;
+            """,
+            (ticker, sector, ind, acc, weights_serialized, timestamp)
+        )
         connection.commit()
         cursor.close()
         return weights
@@ -421,7 +471,12 @@ class Charts:
                         bias = weight
                         train = False
                     retrain = True
-        if train: bias = self._liveTrain(ticker=ticker, retrain=retrain)
+        if train:
+            bias = self._liveTrain(ticker=ticker, retrain=retrain)
+        # Ensure we have a usable bias; fallback to sensible defaults when training fails or returns None
+        if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0:
+            logging.warning(f"_liveTrain returned no bias for {ticker}; falling back to default weights")
+            bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
         bias = bias[0]
 
         histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
