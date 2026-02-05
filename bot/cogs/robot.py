@@ -246,7 +246,6 @@ class Register(discord.ui.Modal, title="Register"):
                     label="AGREE",
                     value="f61d73edf39f49f1bd099d5f158af9cc",
                     description="I AGREE to receive marketing communications regarding new features, promotions, and more.",
-                    default=True
                 ),
                 discord.SelectOption(
                     label="DISAGREE",
