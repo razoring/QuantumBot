@@ -1,13 +1,14 @@
 IMPORTANT:
-Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
-    Full cache system
-    Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
-    USE INTEGRATED DATABASE
+Registration
+Full cache system
+Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
 Accuracy as of date labels
+Labels of why (Earnings, Dividends, etc)
+Yahoo Analyst Predictions
 
 TBD SOON:
-Social media sentiment for predictions (https://socialscan.app/index.php)
+Polymarket data
 DM usage capabilities
 Implementation of the AI
 More in-depth telemetry
@@ -26,3 +27,10 @@ Disable sponsors (premium subscription)
 Web dashboard
 Web API
 Customize Appearance
+
+COMPLETED:
+Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
+USE INTEGRATED DATABASE
+
+ABANDONED:
+Social media sentiment for predictions (https://socialscan.app/index.php) - App no longer exists
