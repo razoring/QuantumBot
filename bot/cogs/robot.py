@@ -77,51 +77,6 @@ def infoEmbed(info: any, ticker: str, static: dict):
     embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
     return embed
 
-class Update(discord.ui.View):
-    def __init__(self, ticker):
-        super().__init__(timeout=None)
-        self.ticker = ticker
-    
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
-    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
-        new_info = functions.yFinanceWrapper(ticker=self.ticker)
-        new_static = getStatic(new_info)
-        
-        await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
-
-class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker, model, fileObject):
-        super().__init__(timeout=None)
-        self.alertPrice = alertPrice
-        self.ticker = alertTicker
-        self.model = model
-        self.file = fileObject
-
-    async def feedback(self, interaction: discord.Interaction, rating):
-        self.file.seek(0)
-        hook = DiscordWebhook(url=WEBHOOK, content=f"Rating: **{rating}**, Version: {getVersion()}, Ticker: {self.ticker}, Model: {self.model}, Timestamp: {datetime.datetime.now()}") 
-        hook.add_file(file=self.file, filename="output.png")
-        await asyncio.to_thread(hook.execute)
-        
-        items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
-        for item in items_to_remove: self.remove_item(item)
-        await interaction.edit_original_response(view=self)
-
-    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
-    async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}.```", ephemeral=True)
-
-    @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
-    async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await self.feedback(interaction, "Realistic")
-
-    @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
-    async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await self.feedback(interaction, "Unrealistic")
-
 class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -266,7 +221,148 @@ class Robot(commands.Cog):
         await interaction.followup.send(embed=self.lookup(query=query))
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
-    async def me():
-        pass
+    async def me(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(Register())
 
 async def setup(bot): await bot.add_cog(Robot(bot))
+
+class Register(discord.ui.Modal, title="Register"):
+    """discord_account = discord.ui.TextInput(
+        label="Discord Account",
+        placeholder="wumpus",
+        style=discord.TextStyle.short,
+        required=True,
+        custom_id="d0c1e00ef8f64ca498e6247e5ba867cb",
+    )"""
+
+    marketing_comms = discord.ui.Label(
+        text="Marketing Communications",
+        description="Confirm marketing communications (new features, exclusive promotions, etc) via Email, SMS, or DMs.",
+        component=discord.ui.Select(
+            custom_id="684e0b62c1c441bba9c17a4f4aa5753a",
+            placeholder="Choose (You can opt-out anytime)",
+            options=[
+                discord.SelectOption(
+                    label="AGREE",
+                    value="f61d73edf39f49f1bd099d5f158af9cc",
+                    description="I AGREE to receive marketing communications regarding new features, promotions, and more.",
+                    default=True
+                ),
+                discord.SelectOption(
+                    label="DISAGREE",
+                    value="46cc9871a1ee4e9491cdff6710755b4c",
+                    description="I DISAGREE to receive marketing communications regarding new features, promotions, and more."
+                ),
+            ]
+        ),
+    )
+
+    legal_agreement = discord.ui.Label(
+        text="Legal Agreement",
+        description="Confirm you read and understand the legal disclaimers, terms, conditions, and privacy policy.",
+        component=discord.ui.Select(
+            custom_id="b7dd2eee99394c7fabd31ce98119d58f",
+            placeholder="Choose",
+            options=[
+                discord.SelectOption(
+                    label="AGREE",
+                    value="bebc7759e89e45b5ae42e1df33a93f00",
+                    description="I have read, understand, and AGREE to the legal disclaimers, terms, conditions, and privacy policy."
+                ),
+                discord.SelectOption(
+                    label="DISAGREE",
+                    value="dc55aaedd92b4a3ca38dd9cea2f16ae8",
+                    description="I have read, and DISAGREE to the terms. Thereby I confirm that I cannot use bot's features."
+                ),
+            ]
+        ),
+    )
+
+    """email = discord.ui.TextInput(
+        label="Email",
+        placeholder="email@xyz.com",
+        style=discord.TextStyle.short,
+        required=False,
+        custom_id="919aebdb748a4220966efb7a1b8d2596",
+        max_length=100,
+    )
+
+    phone = discord.ui.TextInput(
+        label="Phone",
+        placeholder="1-800-555-5555 (Standard rates may apply)",
+        style=discord.TextStyle.short,
+        required=False,
+        min_length=10,
+        max_length=16,
+        custom_id="05daa38f551444d188c5fba6d800c658",
+    )"""
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        """
+        The on_submit method is called when the user submits the modal.
+        Note: Accessing the values of Select menus submitted in a Modal 
+              via this method is complex and often requires inspecting 
+              the raw interaction data in non-standard implementations.
+              The values for TextInputs, however, are straightforward.
+        """
+        # Access Text Input values directly:
+        account_name = self.discord_account.value
+        email_address = self.email.value
+        phone_number = self.phone.value
+        
+        # Accessing Select Menu values (Requires inspecting raw data or specific library methods):
+        # selected_marketing = self.marketing_comms.component.values[0] # Example for one selected option
+        # selected_legal = self.legal_agreement.component.values[0]     # Example for one selected option
+        
+        # Simple Example Submission Handling (Text Inputs):
+        response_msg = f"Submission received!\n" \
+                       f"Discord Account: {account_name}\n" \
+                       f"Email: {email_address or 'Not provided'}\n" \
+                       f"Phone: {phone_number or 'Not provided'}"
+        
+        await interaction.response.send_message(response_msg, ephemeral=True)
+
+class Update(discord.ui.View):
+    def __init__(self, ticker):
+        super().__init__(timeout=None)
+        self.ticker = ticker
+    
+    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        new_info = functions.yFinanceWrapper(ticker=self.ticker)
+        new_static = getStatic(new_info)
+        
+        await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
+
+class Feedback(discord.ui.View):
+    def __init__(self, alertPrice, alertTicker, model, fileObject):
+        super().__init__(timeout=None)
+        self.alertPrice = alertPrice
+        self.ticker = alertTicker
+        self.model = model
+        self.file = fileObject
+
+    async def feedback(self, interaction: discord.Interaction, rating):
+        self.file.seek(0)
+        hook = DiscordWebhook(url=WEBHOOK, content=f"Rating: **{rating}**, Version: {getVersion()}, Ticker: {self.ticker}, Model: {self.model}, Timestamp: {datetime.datetime.now()}") 
+        hook.add_file(file=self.file, filename="output.png")
+        await asyncio.to_thread(hook.execute)
+        
+        items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
+        for item in items_to_remove: self.remove_item(item)
+        await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
+    async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}.```", ephemeral=True)
+
+    @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
+    async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self.feedback(interaction, "Realistic")
+
+    @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
+    async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+        await self.feedback(interaction, "Unrealistic")
