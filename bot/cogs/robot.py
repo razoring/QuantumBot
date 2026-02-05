@@ -295,31 +295,9 @@ class Register(discord.ui.Modal, title="Register"):
         max_length=16,
         custom_id="05daa38f551444d188c5fba6d800c658",
     )"""
-
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        """
-        The on_submit method is called when the user submits the modal.
-        Note: Accessing the values of Select menus submitted in a Modal 
-              via this method is complex and often requires inspecting 
-              the raw interaction data in non-standard implementations.
-              The values for TextInputs, however, are straightforward.
-        """
-        # Access Text Input values directly:
-        account_name = self.discord_account.value
-        email_address = self.email.value
-        phone_number = self.phone.value
-        
-        # Accessing Select Menu values (Requires inspecting raw data or specific library methods):
-        # selected_marketing = self.marketing_comms.component.values[0] # Example for one selected option
-        # selected_legal = self.legal_agreement.component.values[0]     # Example for one selected option
-        
-        # Simple Example Submission Handling (Text Inputs):
-        response_msg = f"Submission received!\n" \
-                       f"Discord Account: {account_name}\n" \
-                       f"Email: {email_address or 'Not provided'}\n" \
-                       f"Phone: {phone_number or 'Not provided'}"
-        
-        await interaction.response.send_message(response_msg, ephemeral=True)
+    
+    async def on_submit(self, interaction:discord.Interaction):
+        await interaction.response.send_message(f'Thanks for your feedback, {interaction.user.name}!', ephemeral=True)
 
 class Update(discord.ui.View):
     def __init__(self, ticker):
