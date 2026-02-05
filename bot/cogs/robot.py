@@ -104,21 +104,21 @@ class Robot(commands.Cog):
 
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
-        txt = open("bot\modular\help.txt","r")
-        embed.description = f"""{txt.read()}"""
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        with open("bot/modular/help.txt", "r") as txt:
+            embed.description = txt.read()
+        await interaction.followup.send(embed=embed)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
     async def quote(self, interaction: discord.Interaction, ticker: str):
-        await interaction.response.defer()
-
         sanity = self.lookup(ticker,boolean=True)
         if sanity == False:
             await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
             return
+        
+        await interaction.response.defer()
 
         info = functions.yFinanceWrapper(ticker=ticker)
         static = getStatic(info)
@@ -143,28 +143,33 @@ class Robot(commands.Cog):
         app_commands.Choice(name="Maximum displayable (all)", value="max"),
     ])
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
-        charts = functions.Charts()
-        await interaction.response.defer()
-        
-        sanity = self.lookup(ticker,boolean=True)
-        if sanity == False:
-            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"))
-            return
+        try:
+            sanity = self.lookup(ticker,boolean=True)
+            if sanity == False:
+                await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                return
+            
+            await interaction.response.defer()
+            charts = functions.Charts()
 
-        info = functions.yFinanceWrapper(ticker=ticker)
-        static = getStatic(info)
+            info = functions.yFinanceWrapper(ticker=ticker)
+            static = getStatic(info)
 
-        update = Update(ticker=ticker)
-        embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
-        
-        invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-        icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+            update = Update(ticker=ticker)
+            embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
+            
+            invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+            icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-        img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon)
-        if img:
-            file = discord.File(img, filename="output.png")
-            embed.set_image(url="attachment://output.png")
-            await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update)
+            img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon)
+            if img:
+                file = discord.File(img, filename="output.png")
+                embed.set_image(url="attachment://output.png")
+                await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update)
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.response.send_message("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
+
 
     @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
     @app_commands.describe(ticker="Ticker to create/delete alerts for")
@@ -179,13 +184,13 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
-        #try:
-            charts = functions.Charts()
-            await interaction.response.defer()
-
+        try:
             if self.lookup(ticker,boolean=True) == False:
-                await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
+            
+            await interaction.response.defer()
+            charts = functions.Charts()
 
             embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
             embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
@@ -207,12 +212,12 @@ class Robot(commands.Cog):
                 embed.set_image(url="attachment://output.png")
                 
                 feedback_view = Feedback(90, ticker, selectedModel, img_copy)
-                if warning: embed.description = "Model has been changed because there were not enough datapoints to draw an accurate conclusion."
+                if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
                 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
-        #except Exception as e:
-            #traceback.print_exc()
-            #await interaction.followup.send("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
+        except Exception as e:
+            traceback.print_exc()
+            await interaction.response.send_message("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
     @app_commands.describe(query="The input to validate")
@@ -331,7 +336,7 @@ class Feedback(discord.ui.View):
 
     @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
     async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}.```", ephemeral=True)
 
     @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
