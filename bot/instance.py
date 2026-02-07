@@ -43,13 +43,13 @@ async def reload(ctx):
         bot.tree.copy_global_to(guild=ctx.guild)
         await bot.tree.sync(guild=ctx.guild)
     
-    await status_msg.edit(content="Reloaded & Synced (Local Guild) [Use !sync to sync globally]")
+    await status_msg.edit(content="Reload complete and synced to local guild (Use !sync to sync globally)")
 
 @bot.command(name="sync", hidden=True)
 @commands.is_owner()
 async def globalsync(ctx):
     msg = await ctx.send("Syncing Globally... (This may take up to 1hr to appear)")
     await bot.tree.sync()
-    await msg.edit(content="Global Sync Complete.")
+    await msg.edit(content="Global Sync Complete")
 
 if __name__ == "__main__": bot.run(TOKEN)

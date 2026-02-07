@@ -5,6 +5,7 @@ import logging
 import math
 import threading
 import time
+import traceback
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -392,7 +393,6 @@ class Charts:
 
         acc = float(bestError) if 'bestError' in locals() and bestError is not None else 0.0 # accuracy from optimizer may be numpy types; ensure native float
 
-        logging.debug(f"Writing ticker={ticker} acc={acc} weight={serialized}")
         cursor.execute(
             """
             INSERT INTO ticker (ticker, sector, industry, active, accuracy, weight, updated)
@@ -517,12 +517,12 @@ class Charts:
         options = stock.options
         if len(options) <= 1: return None
 
-        start_date = lastDate.date()
+        start = lastDate.date()
 
         for exp in options:
             try:
                 expDate = datetime.strptime(exp, "%Y-%m-%d").date()
-                daysDiff = (expDate - start_date).days
+                daysDiff = (expDate - start).days
                 if daysDiff < 0: continue
                 
                 if daysDiff > forward + 15: break
@@ -744,3 +744,24 @@ class Charts:
 
         chartBuf = self._buffer(fig)
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
+
+class User():
+    def __init__(self, discordID):
+        self.discordID = discordID
+
+    def accountFromDiscord(self, cursor = connection.cursor()):
+        cursor.execute(f"select * from account where discord = '{self.discordID}'")
+        row = cursor.fetchone()
+        return row[0] if row is not None else None # return SQL userID (NOT DISCORD'S)
+
+    def createAccount(self, marketing:bool):
+        try:
+            cursor = connection.cursor()
+            account = self.accountFromDiscord(cursor=cursor)
+            if account is None:
+                cursor.execute("""insert into account (discord, premium, preferences, credits, created, updated) values ('%s', false, '{"marketing":%s}',0,%s,%s)""" % (self.discordID, str(marketing).lower(), datetime.now().timestamp, datetime.now().timestamp))
+                account = self.accountFromDiscord(cursor=cursor)
+            return account #SQL userID
+        except Exception as e:
+            traceback.print_exc()
+            return None

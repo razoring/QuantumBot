@@ -81,6 +81,15 @@ class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
+    def _registered(self, discordID):
+        user = functions.User(discordID=discordID)
+        if user.accountFromDiscord() is not None: return True
+        return False
+    
+    def authenticated(self, discordID, interaction: discord.Interaction):
+        if self._registered(discordID): pass
+        else: self.me(interaction=interaction, bypass=True)
+
     def lookup(self, query, header="Results for", boolean=False):
         results = yf.Lookup(query).get_all(10)
         symbols = results.index.to_list() if "exchange" not in results.columns else results["exchange"].index.to_list()
@@ -217,7 +226,9 @@ class Robot(commands.Cog):
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
         except Exception as e:
             traceback.print_exc()
-            await interaction.response.send_message("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
     @app_commands.describe(query="The input to validate")
@@ -226,12 +237,29 @@ class Robot(commands.Cog):
         await interaction.followup.send(embed=self.lookup(query=query))
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
-    async def me(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(Register())
+    async def me(self, interaction: discord.Interaction, bypass=False):
+        if self._registered(interaction.user.id) and bypass == False:
+            user = functions.User(discordID=interaction.user.id)
+            embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")
+            embed.description = f"Discord ID: {interaction.user.id}\nUsername: {interaction.user.name}\nRegistered: Yes"
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = discord.Embed(color=discord.Colour.teal(),title="401: Request Unauthorized")
+            embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
+            embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
+            await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
 
-async def setup(bot): await bot.add_cog(Robot(bot))
+class RegisterPrompt(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(label="Terms of Service", url="https://github.com/razoring/QuantumDiscordBot/blob/main/TermsService"))
+        self.add_item(discord.ui.Button(label="Privacy Policy", url="https://github.com/razoring/QuantumDiscordBot/blob/main/PrivacyPolicy"))
 
-class Register(discord.ui.Modal, title="Register"):
+    @discord.ui.button(label="Continue", style=discord.ButtonStyle.green, custom_id="Register")
+    async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(RegisterModal())
+
+class RegisterModal(discord.ui.Modal, title="Register"):
     """discord_account = discord.ui.TextInput(
         label="Discord Account",
         placeholder="wumpus",
@@ -240,7 +268,10 @@ class Register(discord.ui.Modal, title="Register"):
         custom_id="d0c1e00ef8f64ca498e6247e5ba867cb",
     )"""
 
-    marketing_comms = discord.ui.Label(
+    def __init__(self):
+        super().__init__()
+
+    marketing = discord.ui.Label( # use preferences to determine
         text="Marketing Communications",
         description="Confirm marketing communications (new features, exclusive promotions, etc) via Email, SMS, or DMs.",
         component=discord.ui.Select(
@@ -249,20 +280,20 @@ class Register(discord.ui.Modal, title="Register"):
             options=[
                 discord.SelectOption(
                     label="AGREE",
-                    value="f61d73edf39f49f1bd099d5f158af9cc",
+                    value=True,
                     description="I AGREE to receive marketing communications regarding new features, promotions, and more.",
                 ),
                 discord.SelectOption(
                     label="DISAGREE",
-                    value="46cc9871a1ee4e9491cdff6710755b4c",
+                    value=False,
                     description="I DISAGREE to receive marketing communications regarding new features, promotions, and more."
                 ),
             ]
         ),
     )
 
-    legal_agreement = discord.ui.Label(
-        text="Legal Agreement",
+    legal = discord.ui.Label(
+        text="EULA",
         description="Confirm you read and understand the legal disclaimers, terms, conditions, and privacy policy.",
         component=discord.ui.Select(
             custom_id="b7dd2eee99394c7fabd31ce98119d58f",
@@ -270,12 +301,12 @@ class Register(discord.ui.Modal, title="Register"):
             options=[
                 discord.SelectOption(
                     label="AGREE",
-                    value="bebc7759e89e45b5ae42e1df33a93f00",
+                    value=True,
                     description="I have read, understand, and AGREE to the legal disclaimers, terms, conditions, and privacy policy."
                 ),
                 discord.SelectOption(
                     label="DISAGREE",
-                    value="dc55aaedd92b4a3ca38dd9cea2f16ae8",
+                    value=False,
                     description="I have read, and DISAGREE to the terms. Thereby I confirm that I cannot use bot's features."
                 ),
             ]
@@ -302,11 +333,25 @@ class Register(discord.ui.Modal, title="Register"):
     )"""
     
     async def on_submit(self, interaction:discord.Interaction):
-        await interaction.response.send_message(f'Thanks for your feedback, {interaction.user.name}!', ephemeral=True)
+        assert isinstance(self.marketing.component, discord.ui.Select)
+        assert isinstance(self.legal.component, discord.ui.Select)
+
+        user = functions.User(interaction.user.id)
+        marketing = self.marketing.component.values[0]
+        legal = self.legal.component.values[0]
+        if legal:
+            if user.createAccount(marketing=marketing):
+                embed = discord.Embed(color=discord.Colour.teal(), title="Registration Complete")
+                embed.description = "Thanks for registering! You can now use all bot features."
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            embed = discord.Embed(color=discord.Colour.teal(), title="406: Registration Failed")
+            embed.description = "Thanks for registering! You can now use all bot features."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class Update(discord.ui.View):
     def __init__(self, ticker):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300)
         self.ticker = ticker
     
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
@@ -318,7 +363,7 @@ class Update(discord.ui.View):
 
 class Feedback(discord.ui.View):
     def __init__(self, alertPrice, alertTicker, model, fileObject):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300)
         self.alertPrice = alertPrice
         self.ticker = alertTicker
         self.model = model
@@ -348,3 +393,6 @@ class Feedback(discord.ui.View):
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         await self.feedback(interaction, "Unrealistic")
+
+# mount bot - DO NOT TOUCH
+async def setup(bot): await bot.add_cog(Robot(bot))
