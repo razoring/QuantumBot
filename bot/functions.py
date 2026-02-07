@@ -316,8 +316,8 @@ class Charts:
     def _liveTrain(self, ticker, progress=None):
         ticker = str(ticker).upper()
 
-        end = datetime.now()-timedelta(days=30)
-        start = end-timedelta(days=365*5)
+        end = (datetime.now() - timedelta(days=30)).replace(tzinfo=None)
+        start = (end - timedelta(days=365*5)).replace(tzinfo=None)
 
         cursor = connection.cursor()
         if not cursor: raise Exception("ERROR: Failed to create cursor")
@@ -341,7 +341,7 @@ class Charts:
         history = stock.history(start=start-timedelta(days=730), end=end, interval="1d") # 2018 to give prophet data to base off of
         if history.empty: return
 
-        window = history[start:end]
+        window = history.loc[start.strftime('%Y-%m-%d'):end.strftime('%Y-%m-%d')]
         daily = window.resample("D").interpolate()
         if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
         origins = window["Close"].resample("2W-FRI").last().dropna()
