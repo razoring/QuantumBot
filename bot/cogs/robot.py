@@ -177,8 +177,9 @@ class Robot(commands.Cog):
                 await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update)
         except Exception as e:
             traceback.print_exc()
-            await interaction.response.send_message("```An error occurred on our part. Please try again. If the problem persists, please contact support.```", ephemeral=True)
-
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
     @app_commands.describe(ticker="Ticker to create/delete alerts for")
@@ -230,7 +231,7 @@ class Robot(commands.Cog):
             embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query")
+    @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query (stock, index, etf, general search)")
     @app_commands.describe(query="The input to validate")
     async def tickers(self, interaction: discord.Interaction, query:str):
         await interaction.response.defer()
@@ -346,7 +347,7 @@ class RegisterModal(discord.ui.Modal, title="Register"):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             embed = discord.Embed(color=discord.Colour.teal(), title="406: Registration Failed")
-            embed.description = "Thanks for registering! You can now use all bot features."
+            embed.description = "You must agree to the terms of service to use this bot. \n\nIf you think this is a mistake, please contact support."
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class Update(discord.ui.View):
