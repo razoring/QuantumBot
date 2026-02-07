@@ -55,10 +55,8 @@ class Stamp:
         return rounded
 
     def image(self, chart, displayLegend=True):
-        if displayLegend:
-            main = Image.open("bot/assets/predict.png").convert("RGBA")
-        else:
-            main = Image.open("bot/assets/chart.png").convert("RGBA")
+        if displayLegend: main = Image.open("bot/assets/template.png").convert("RGBA")
+        else: main = Image.open("bot/assets/template.png").convert("RGBA")
         legend = Image.open("bot/assets/legend.png").convert("RGBA")
         chartImg = Image.open(chart).resize((2400, 1200)).convert("RGBA")
 
