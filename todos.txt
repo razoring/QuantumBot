@@ -1,9 +1,10 @@
 IMPORTANT:
+Fix template /chart or /predict type
+Chart Considerations (Earnings, Dividends, etc)
+- Yahoo Analyst Predictions
+Accuracy as of date labels
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
-Accuracy as of date labels
-Labels of why (Earnings, Dividends, etc)
-- Yahoo Analyst Predictions
 
 TBD SOON:
 Polymarket data
