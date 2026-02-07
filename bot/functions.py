@@ -757,7 +757,7 @@ class User():
             cursor = connection.cursor()
             account = self.accountFromDiscord(cursor=cursor)
             if account is None:
-                cursor.execute("""insert into account (discord, premium, preferences, credits, created, updated) values ('%s', false, '{"marketing":%s}',0,%s,%s)""" % (self.discordID, str(marketing).lower(), datetime.now().timestamp, datetime.now().timestamp))
+                cursor.execute("""insert into account (discord, premium, preferences, credits, created, updated) values ('%s', false, '{"marketing":%s}',0,%s,%s)""" % (self.discordID, str(marketing).lower(), str(int(datetime.now().timestamp())), str(int(datetime.now().timestamp()))))
                 account = self.accountFromDiscord(cursor=cursor)
             return account #SQL userID
         except Exception as e:

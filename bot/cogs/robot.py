@@ -23,6 +23,8 @@ load_dotenv()
 WEBHOOK = os.getenv("FEEDBACK_WEBHOOK")
 GIT_TOKEN = os.getenv("GIT_TOKEN")
 
+# map of discord user id -> asyncio.Future used to await registration results
+PENDING_REGISTRATIONS: dict[int, asyncio.Future] = {}
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
 humanizer = functions.Humanizer()
@@ -108,9 +110,29 @@ class Robot(commands.Cog):
         embed.description = desc
         return embed
     
-    def authenticated(self, interaction: discord.Interaction):
-        if self._registered(interaction.user.id): pass
-        else: self.me(interaction=interaction, bypass=True)
+    async def authenticated(self, interaction: discord.Interaction, bypass=False):
+        if self._registered(interaction.user.id) and bypass==False:
+            return True
+
+        # Not registered: prompt user and wait for modal submission result
+        embed = discord.Embed(color=discord.Colour.teal(),title="401: Request Unauthorized")
+        embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
+        embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
+        await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+
+        # create a future and wait for the modal handler to set its result
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        PENDING_REGISTRATIONS[interaction.user.id] = fut
+        try:
+            result = await asyncio.wait_for(fut, timeout=300)
+            return bool(result)
+        except asyncio.TimeoutError:
+            PENDING_REGISTRATIONS.pop(interaction.user.id, None)
+            timeout_embed = discord.Embed(color=discord.Colour.teal(), title="408: Registration Timeout")
+            timeout_embed.description = "Registration timed out. Please try again."
+            await interaction.followup.send(embed=timeout_embed, ephemeral=True)
+            return False
 
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
@@ -195,12 +217,14 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
+        await interaction.response.defer()
+        if await self.authenticated(interaction=interaction, bypass=True) == True: pass
+        else: return
         try:
             if self.lookup(ticker,boolean=True) == False:
                 await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
             
-            await interaction.response.defer()
             charts = functions.Charts()
 
             embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
@@ -239,17 +263,13 @@ class Robot(commands.Cog):
         await interaction.followup.send(embed=self.lookup(query=query))
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
-    async def me(self, interaction: discord.Interaction, bypass:bool=False):
-        if self._registered(interaction.user.id) and bypass == False:
+    async def me(self, interaction: discord.Interaction):
+        if self._registered(interaction.user.id):
             user = functions.User(discordID=interaction.user.id)
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")
             embed.description = f"Discord ID: {interaction.user.id}\nUsername: {interaction.user.name}\nRegistered: Yes"
             await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            embed = discord.Embed(color=discord.Colour.teal(),title="401: Request Unauthorized")
-            embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
-            embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
-            await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+        else: await self.authenticated(interaction=interaction, bypass=True)
 
 class RegisterPrompt(discord.ui.View):
     def __init__(self):
@@ -341,12 +361,27 @@ class RegisterModal(discord.ui.Modal, title="Register"):
         user = functions.User(interaction.user.id)
         marketing = self.marketing.component.values[0]
         legal = self.legal.component.values[0]
+        # notify any waiter that registration completed (or failed)
+        fut = PENDING_REGISTRATIONS.pop(interaction.user.id, None)
         if legal:
+            success = False
             if user.createAccount(marketing=marketing):
+                success = True
                 embed = discord.Embed(color=discord.Colour.teal(), title="Registration Complete")
                 embed.description = "Thanks for registering! You can now use all bot features."
+                # set result before replying so callers can proceed without waiting on this IO
+                if fut and not fut.done():
+                    fut.set_result(True)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                if fut and not fut.done():
+                    fut.set_result(False)
+                embed = discord.Embed(color=discord.Colour.teal(), title="500: Registration Failed")
+                embed.description = "An error occurred while creating your account. Please try again later."
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
+            if fut and not fut.done():
+                fut.set_result(False)
             embed = discord.Embed(color=discord.Colour.teal(), title="406: Registration Failed")
             embed.description = "You must agree to the terms of service to use this bot. \n\nIf you think this is a mistake, please contact support."
             await interaction.response.send_message(embed=embed, ephemeral=True)
