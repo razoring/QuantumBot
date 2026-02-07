@@ -21,14 +21,14 @@ from themes import brand, bgDark
 
 load_dotenv()
 WEBHOOK = os.getenv("FEEDBACK_WEBHOOK")
-GIT_TOKEN = os.getenv("GIT_TOKEN")
+GIT = os.getenv("GIT_TOKEN")
 
 # map of discord user id -> asyncio.Future used to await registration results
-PENDING_REGISTRATIONS: dict[int, asyncio.Future] = {}
+REGISTRATIONS: dict[int, asyncio.Future] = {}
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 
 humanizer = functions.Humanizer()
-git = Github(auth=Auth.Token(GIT_TOKEN))
+git = Github(auth=Auth.Token(GIT))
 
 def getVersion():
     RELEASE = 1
@@ -114,32 +114,26 @@ class Robot(commands.Cog):
         if self._registered(interaction.user.id) and bypass==False:
             return True
 
-        # Not registered: prompt user and wait for modal submission result
-        embed = discord.Embed(color=discord.Colour.teal(),title="401: Request Unauthorized")
+        embed = discord.Embed(color=discord.Colour.teal(),title="401: Regristration Required")
         embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
         embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
-        # If this interaction was already responded to (eg. deferred), use followup
         try:
-            if interaction.response.is_done():
-                await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
-            else:
-                await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            if interaction.response.is_done(): await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            else: await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
         except Exception:
-            # fallback to followup if anything goes wrong
-            try:
-                await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
-            except Exception:
-                pass
+            try: await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            except Exception: pass
 
         # create a future and wait for the modal handler to set its result
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
-        PENDING_REGISTRATIONS[interaction.user.id] = fut
+        REGISTRATIONS[interaction.user.id] = fut
+
         try:
             result = await asyncio.wait_for(fut, timeout=300)
             return bool(result)
         except asyncio.TimeoutError:
-            PENDING_REGISTRATIONS.pop(interaction.user.id, None)
+            REGISTRATIONS.pop(interaction.user.id, None)
             timeout_embed = discord.Embed(color=discord.Colour.teal(), title="408: Registration Timeout")
             timeout_embed.description = "Registration timed out. Please try again."
             await interaction.followup.send(embed=timeout_embed, ephemeral=True)
@@ -147,28 +141,40 @@ class Robot(commands.Cog):
 
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
-        with open("bot/modular/help.txt", "r") as txt:
-            embed.description = txt.read()
-        await interaction.followup.send(embed=embed)
+        try:
+            await interaction.response.defer(ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
+            with open("bot/modular/help.txt", "r") as txt:
+                embed.description = txt.read()
+            await interaction.followup.send(embed=embed)
+        except Exception as e:
+            traceback.print_exc()
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
     async def quote(self, interaction: discord.Interaction, ticker: str):
-        sanity = self.lookup(ticker,boolean=True)
-        if sanity == False:
-            await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
-            return
-        
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
+            sanity = self.lookup(ticker,boolean=True)
+            if sanity == False:
+                await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                return
 
-        info = functions.yFinanceWrapper(ticker=ticker)
-        static = getStatic(info)
-        
-        update = Update(ticker=ticker)
-        embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
-        await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
+            info = functions.yFinanceWrapper(ticker=ticker)
+            static = getStatic(info)
+            
+            update = Update(ticker=ticker)
+            embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
+            await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
+        except Exception as e:
+            traceback.print_exc()
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
@@ -187,12 +193,13 @@ class Robot(commands.Cog):
     ])
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
         try:
+            await interaction.response.defer()
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
             sanity = self.lookup(ticker,boolean=True)
             if sanity == False:
                 await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
             
-            await interaction.response.defer()
             charts = functions.Charts()
 
             info = functions.yFinanceWrapper(ticker=ticker)
@@ -213,7 +220,7 @@ class Robot(commands.Cog):
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
             embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
     @app_commands.describe(ticker="Ticker to create/delete alerts for")
@@ -228,10 +235,9 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
-        await interaction.response.defer(ephemeral=True)
-        if await self.authenticated(interaction=interaction, bypass=False) == True: pass
-        else: return
         try:
+            await interaction.response.defer(ephemeral=True)
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
             if self.lookup(ticker,boolean=True) == False:
                 await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
@@ -247,39 +253,33 @@ class Robot(commands.Cog):
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
             icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-            # send initial status message that we'll edit as progress updates arrive
-            status_embed = discord.Embed(color=discord.Colour.teal(), title="Generating prediction...")
-            status_embed.description = "Starting prediction process..."
-            status_msg = await interaction.followup.send(embed=status_embed)
+            loading = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
+            loading.description = "Starting Thread..."
+            status = await interaction.followup.send(embed=loading)
 
             loop = asyncio.get_running_loop()
 
             async def edit_status(text: str):
                 try:
-                    e = discord.Embed(color=discord.Colour.teal(), title="Generating prediction...")
+                    e = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
                     e.description = text
-                    await status_msg.edit(embed=e)
-                except Exception:
-                    pass
+                    await status.edit(embed=e)
+                except Exception: pass
 
             # thread-safe callback to be passed into the projection function
             def progress_cb(text: str):
-                try:
-                    loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
-                except Exception:
-                    pass
+                try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
+                except Exception: pass
 
             img = await asyncio.to_thread(charts.project, ticker, selectedModel, interaction.guild.name, invite.url, icon, progress_cb)
 
             if img is None:
                 warning = True
-                # retry with fallback model; update status
-                progress_cb("Falling back to alternative model and retraining...")
+                progress_cb("Using Extrapolation Model...")
                 img = await asyncio.to_thread(charts.project, ticker, 1, interaction.guild.name, invite.url, icon, progress_cb)
 
             if img:
-                # finalizing
-                progress_cb("Finalizing image and uploading...")
+                progress_cb("Finalizing/Cleaning...")
                 img_copy = io.BytesIO(img.getvalue())
                 file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
@@ -288,27 +288,40 @@ class Robot(commands.Cog):
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
-                await status_msg.delete()
+                await status.delete()
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
             embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query (stock, index, etf, general search)")
     @app_commands.describe(query="The input to validate")
     async def tickers(self, interaction: discord.Interaction, query:str):
-        await interaction.response.defer()
-        await interaction.followup.send(embed=self.lookup(query=query))
+        try:
+            await interaction.response.defer()
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
+            await interaction.followup.send(embed=self.lookup(query=query))
+        except Exception as e:
+            traceback.print_exc()
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
     async def me(self, interaction: discord.Interaction):
-        if self._registered(interaction.user.id):
+        try:
+            interaction.response.defer()
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
             user = functions.User(discordID=interaction.user.id)
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")
             embed.description = f"Discord ID: {interaction.user.id}\nUsername: {interaction.user.name}\nRegistered: Yes"
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else: await self.authenticated(interaction=interaction, bypass=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception as e:
+            traceback.print_exc()
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 class RegisterPrompt(discord.ui.View):
     def __init__(self):
@@ -401,7 +414,7 @@ class RegisterModal(discord.ui.Modal, title="Register"):
         marketing = self.marketing.component.values[0]
         legal = self.legal.component.values[0]
         # notify any waiter that registration completed (or failed)
-        fut = PENDING_REGISTRATIONS.pop(interaction.user.id, None)
+        fut = REGISTRATIONS.pop(interaction.user.id, None)
         if legal:
             success = False
             if user.createAccount(marketing=marketing):
