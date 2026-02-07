@@ -80,15 +80,12 @@ def infoEmbed(info: any, ticker: str, static: dict):
 class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    
-    def _registered(self, discordID):
+
+    @staticmethod
+    def _registered(discordID):
         user = functions.User(discordID=discordID)
         if user.accountFromDiscord() is not None: return True
         return False
-    
-    def authenticated(self, discordID, interaction: discord.Interaction):
-        if self._registered(discordID): pass
-        else: self.me(interaction=interaction, bypass=True)
 
     def lookup(self, query, header="Results for", boolean=False):
         results = yf.Lookup(query).get_all(10)
@@ -110,6 +107,10 @@ class Robot(commands.Cog):
 
         embed.description = desc
         return embed
+    
+    def authenticated(self, interaction: discord.Interaction):
+        if self._registered(interaction.user.id): pass
+        else: self.me(interaction=interaction, bypass=True)
 
     @app_commands.command(name="help", description="List all commands, and additional information")
     async def help(self, interaction: discord.Interaction):
@@ -185,7 +186,7 @@ class Robot(commands.Cog):
     @app_commands.describe(ticker="Ticker to create/delete alerts for")
     async def alerts(self, interaction: discord.Interaction, ticker: typing.Optional[app_commands.Choice[str]]):
         pass
-
+    
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")
     @app_commands.choices(model=[
@@ -238,7 +239,7 @@ class Robot(commands.Cog):
         await interaction.followup.send(embed=self.lookup(query=query))
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
-    async def me(self, interaction: discord.Interaction, bypass=False):
+    async def me(self, interaction: discord.Interaction, bypass:bool=False):
         if self._registered(interaction.user.id) and bypass == False:
             user = functions.User(discordID=interaction.user.id)
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")

@@ -1,11 +1,9 @@
 IMPORTANT:
-Registration
-Full cache system
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
 Accuracy as of date labels
 Labels of why (Earnings, Dividends, etc)
-Yahoo Analyst Predictions
+- Yahoo Analyst Predictions
 
 TBD SOON:
 Polymarket data
@@ -29,6 +27,8 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Registration
+Full cache system
 Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
 USE INTEGRATED DATABASE
 
