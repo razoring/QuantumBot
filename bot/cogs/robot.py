@@ -118,7 +118,18 @@ class Robot(commands.Cog):
         embed = discord.Embed(color=discord.Colour.teal(),title="401: Request Unauthorized")
         embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
         embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
-        await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+        # If this interaction was already responded to (eg. deferred), use followup
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+        except Exception:
+            # fallback to followup if anything goes wrong
+            try:
+                await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            except Exception:
+                pass
 
         # create a future and wait for the modal handler to set its result
         loop = asyncio.get_running_loop()
@@ -217,8 +228,8 @@ class Robot(commands.Cog):
         app_commands.Choice(name=models[2], value="2"),
         app_commands.Choice(name=models[3], value="3")])
     async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
-        await interaction.response.defer()
-        if await self.authenticated(interaction=interaction, bypass=True) == True: pass
+        await interaction.response.defer(ephemeral=True)
+        if await self.authenticated(interaction=interaction, bypass=False) == True: pass
         else: return
         try:
             if self.lookup(ticker,boolean=True) == False:
@@ -236,20 +247,48 @@ class Robot(commands.Cog):
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
             icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-            img = await asyncio.to_thread(charts.project, ticker, selectedModel, interaction.guild.name, invite.url, icon)
-            
+            # send initial status message that we'll edit as progress updates arrive
+            status_embed = discord.Embed(color=discord.Colour.teal(), title="Generating prediction...")
+            status_embed.description = "Starting prediction process..."
+            status_msg = await interaction.followup.send(embed=status_embed)
+
+            loop = asyncio.get_running_loop()
+
+            async def edit_status(text: str):
+                try:
+                    e = discord.Embed(color=discord.Colour.teal(), title="Generating prediction...")
+                    e.description = text
+                    await status_msg.edit(embed=e)
+                except Exception:
+                    pass
+
+            # thread-safe callback to be passed into the projection function
+            def progress_cb(text: str):
+                try:
+                    loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
+                except Exception:
+                    pass
+
+            img = await asyncio.to_thread(charts.project, ticker, selectedModel, interaction.guild.name, invite.url, icon, progress_cb)
+
             if img is None:
                 warning = True
-                img = await asyncio.to_thread(charts.project, ticker, 1, interaction.guild.name, invite.url, icon)
+                # retry with fallback model; update status
+                progress_cb("Falling back to alternative model and retraining...")
+                img = await asyncio.to_thread(charts.project, ticker, 1, interaction.guild.name, invite.url, icon, progress_cb)
+
             if img:
+                # finalizing
+                progress_cb("Finalizing image and uploading...")
                 img_copy = io.BytesIO(img.getvalue())
-                file = discord.File(img, filename="output.png")
+                file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
-                
+
                 feedback_view = Feedback(90, ticker, selectedModel, img_copy)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
-                
+
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
+                await status_msg.delete()
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")

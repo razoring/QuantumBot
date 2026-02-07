@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import logging
@@ -314,101 +315,105 @@ class Charts:
 
     def _liveTrain(self, ticker):
         ticker = str(ticker).upper()
-
-        train = ["2020-01-01","2022-12-31"]
+        # Training range: ensure you have enough data for the 5y (1825d) lookback
+        train_start, train_end = "2020-01-01", "2023-12-31"
 
         cursor = connection.cursor()
-        if not cursor: raise Exception("ERROR: Failed to create cursor")
-        # parameterized select to check if ticker already exists
         cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
         row = cursor.fetchone()
 
-        default_weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
-        # If there's an existing row, use it as starting weight and mark as update; otherwise create defaults
-        if row is None: weight = default_weight
-        else:
-            try: weight = self.clean(row[0])
-            except Exception: weight = default_weight
-
-        bestWeight = weight[0]
+        # Weight structure: [ [w90, w180, w365, w730, w1825], count ]
+        weight_meta = self.clean(row[0]) if row else [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+        running_weights = weight_meta[0]
 
         stock = yf.Ticker(ticker)
-        info = stock.info
-        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
-        history = stock.history(start=datetime.strptime(train[0], "%Y-%m-%d")-timedelta(days=730), end=datetime.strptime(train[1], "%Y-%m-%d"), interval="1d") # 2018 to give prophet data to base off of
+        # Fetch extra history buffer to satisfy the 1825d lookback
+        history = stock.history(start="2015-01-01", end=train_end, interval="1d")
         if history.empty: return
 
-        window = history[train[0]:train[1]]
-        daily = window.resample("D").interpolate()
-        if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
-        origins = window["Close"].resample("W-FRI").last().dropna()
+        # INTERPOLATION OPTIMIZATION: Do this once, not inside the loop
+        daily = history.resample("D").interpolate()
+        if daily.index.tz is not None: 
+            daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
 
-        bias = None
-        weights = None
-        for origin, price in origins.items(): #origin = fridays
-            bias = {90:[bestWeight[0], "ME"], 180:[bestWeight[1], "ME"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "W"], 1825:[bestWeight[4], "YS"]}
-            rawCurves = self._forecast(stock, window, bias, origin, forward=90)
-            
-            if rawCurves is None: continue
-            targetDates = [origin + timedelta(days=i) for i in range(90)]
-            validIndices = []
-            actuals = []
-            
-            for i, date in enumerate(targetDates):
-                d = date.tz_convert("America/New_York").tz_localize(None) if date.tzinfo is not None else date
-                if d in daily.index:
-                    validIndices.append(i)
-                    actuals.append(float(daily.loc[d, "Close"]))
-            
-            if not validIndices: continue
-            matrix = rawCurves[:, validIndices]
-            targets = np.array(actuals)
+        # SPEED FIX: Change 'W-FRI' to '2W-FRI' (Bi-weekly) to cut compute in half
+        origins = history[train_start:train_end]["Close"].resample("2W-FRI").last().dropna()
 
-            const = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-            bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
-            initGuess = np.array(bestWeight, dtype=float)
-            initGuess = initGuess / np.sum(initGuess)
+        bestError = 0.1 # Default
+        
+        # We use a ThreadPool to speed up the _forecast calls
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            for origin in origins.index:
+                bias_config = {
+                    90: [running_weights[0], "ME"], 
+                    180: [running_weights[1], "ME"], 
+                    365: [running_weights[2], "D"], 
+                    730: [running_weights[3], "W"], 
+                    1825: [running_weights[4], "YS"]
+                }
+                
+                # The forecast call is the bottleneck
+                rawCurves = self._forecast(stock, history, bias_config, origin, forward=90)
+                if rawCurves is None: continue
 
-            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
-            bestWeight = res.x.tolist()
-            bestError = res.fun
-            
-            prevInd, countInd = weight
-            adjustment = 0.05 #equal
-            avgInd = [prevInd[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevInd))] #ema
-            weights = [avgInd,countInd+1]
-            #print(origin.date(), bestError, str(round(adjustment*100,2))+"%", bestWeight)
-        timestamp = str(math.floor(int(datetime.now().timestamp())))
-        if weights is None: weights = weight
+                # Vectorized Actuals fetching
+                target_dates = [origin + timedelta(days=i) for i in range(90)]
+                actuals = [daily.loc[d, "Close"] for d in target_dates if d in daily.index]
+                
+                if len(actuals) < 20: continue
+                
+                # Truncate matrix to match actuals length
+                matrix = rawCurves[:, :len(actuals)]
+                targets = np.array(actuals)
 
-        def _serialize(o):
-            if isinstance(o, np.generic): return o.item() # numpy scalar -> native python scalar
-            if isinstance(o, (np.ndarray,)): return o.tolist() # numpy arrays -> lists
-            raise TypeError(f"Type {type(o)} not JSON serializable")
+                # Optimization
+                const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0})
+                bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0))
+                
+                res = minimize(
+                    self._smapeLoss, 
+                    np.array(running_weights), 
+                    args=(matrix, targets), 
+                    method='SLSQP', 
+                    bounds=bounds, 
+                    constraints=const
+                )
+                
+                if res.success:
+                    new_w = res.x
+                    bestError = res.fun
+                    
+                    # ACCURACY FIX: Dynamic Learning Rate (EMA)
+                    # If the error is high (>0.15), we adjust slower.
+                    # If error is low (<0.05), we adjust faster.
+                    adjustment = max(0.01, min(0.1, 0.005 / (bestError + 1e-5)))
+                    
+                    running_weights = [
+                        running_weights[j] * (1 - adjustment) + new_w[j] * adjustment 
+                        for j in range(5)
+                    ]
 
-        serialized = json.dumps(weights, default=_serialize)
-
-        acc = float(bestError) if 'bestError' in locals() and bestError is not None else 0.0 # accuracy from optimizer may be numpy types; ensure native float
-
-        cursor.execute(
-            """
-            INSERT INTO ticker (ticker, sector, industry, active, accuracy, weight, updated)
-            VALUES (%s, %s, %s, true, %s, %s, %s)
+        # Save logic
+        timestamp = str(math.floor(datetime.now().timestamp()))
+        weight_meta = [running_weights, weight_meta[1] + len(origins)]
+        
+        # Native Python types for JSON serialization
+        serialized_weights = json.dumps(weight_meta)
+        
+        cursor.execute("""
+            INSERT INTO ticker (ticker, active, accuracy, weight, updated)
+            VALUES (%s, true, %s, %s, %s)
             ON CONFLICT (ticker) DO UPDATE SET
-                sector = EXCLUDED.sector,
-                industry = EXCLUDED.industry,
-                active = EXCLUDED.active,
                 accuracy = EXCLUDED.accuracy,
                 weight = EXCLUDED.weight,
                 updated = EXCLUDED.updated;
-            """,
-            (ticker, sector, ind, acc, serialized, timestamp))
+        """, (ticker, float(bestError), serialized_weights, timestamp))
+        
         connection.commit()
         cursor.close()
-        return weights
+        return weight_meta
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, progress_callback=None):
         forward = 90
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
@@ -423,6 +428,12 @@ class Charts:
         futureDays = np.arange(0, forward + 1) # 0 to 90 (91 points)
 
         cursor = connection.cursor()
+        # notify caller we are retrieving stored weights
+        try:
+            if progress_callback:
+                progress_callback("Retrieving weights...")
+        except Exception:
+            pass
         cursor.execute(f"select weight, updated from ticker where ticker = '{ticker}'")
         rows = cursor.fetchone()
 
@@ -444,7 +455,13 @@ class Charts:
                         if updated < 432000: # 432000 = 5d in s
                             bias = weight
                             train = False
-            if train: bias = self._liveTrain(ticker=ticker)
+            if train:
+                try:
+                    if progress_callback:
+                        progress_callback("Retraining model... (this may take a few minutes)")
+                except Exception:
+                    pass
+                bias = self._liveTrain(ticker=ticker)
             if bias is None or (not hasattr(bias, "__getitem")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
             bias = bias[0]
 
@@ -464,6 +481,12 @@ class Charts:
                 result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
                 bestWeight = result.x
             else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+
+            try:
+                if progress_callback:
+                    progress_callback("Generating shareable image...")
+            except Exception:
+                pass
 
             future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
             if future is None: return None
@@ -506,6 +529,11 @@ class Charts:
         plt.title(f"{str.upper(ticker)} Prediction (90d)", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         chartBuf = self._buffer(fig)
+        try:
+            if progress_callback:
+                progress_callback("Finalizing image...")
+        except Exception:
+            pass
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
@@ -757,8 +785,11 @@ class User():
             cursor = connection.cursor()
             account = self.accountFromDiscord(cursor=cursor)
             if account is None:
-                cursor.execute("""insert into account (discord, premium, preferences, credits, created, updated) values ('%s', false, '{"marketing":%s}',0,%s,%s)""" % (self.discordID, str(marketing).lower(), str(int(datetime.now().timestamp())), str(int(datetime.now().timestamp()))))
-                account = self.accountFromDiscord(cursor=cursor)
+                cursor.execute("""insert into account (discord, premium, preferences, credits, created, updated) values ('%s', false, '{"marketing":%s}',0,%s,%s) returning id""" % (self.discordID, str(marketing).lower(), str(int(datetime.now().timestamp())), str(int(datetime.now().timestamp()))))
+                returned = cursor.fetchone()
+                account = returned[0] if returned else None
+                connection.commit() #YOU MUST COMMIT
+                cursor.close()
             return account #SQL userID
         except Exception as e:
             traceback.print_exc()

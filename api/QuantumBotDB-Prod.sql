@@ -4,7 +4,6 @@ create table Account(
 	phone text,
 	discord text unique,
 	premium boolean default false,
-	exchange text default 'US',
 	preferences jsonb,
 	credits bigint default 0,
 	created text,
