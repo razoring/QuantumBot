@@ -673,7 +673,7 @@ class Charts:
         maxVol = history.Volume.max()
         ax2.set_ylim(0, maxVol * 4) 
         
-        vol_colors = [themes.brand if c >= o else themes.brandInvert for c, o in zip(history.Close, history.Open)]
+        vol_colors = [themes.brand if c >= o else themes.red for c, o in zip(history.Close, history.Open)]
         ax2.bar(history["x_index"], history.Volume, width=width, color=vol_colors, alpha=0.5)
         
         ax2.yaxis.tick_left()
@@ -696,7 +696,7 @@ class Charts:
         ax1.bar(up["x_index"], up.High - up.Close, bottom=up.Close, width=width2, color=themes.brand)
         ax1.bar(up["x_index"], up.Low - up.Open, bottom=up.Open, width=width2, color=themes.brand)
         
-        downColor = themes.brandInvert
+        downColor = themes.red
         ax1.bar(down["x_index"], down.Close - down.Open, bottom=down.Open, width=width, color=downColor)
         ax1.bar(down["x_index"], down.High - down.Open, bottom=down.Open, width=width2, color=downColor)
         ax1.bar(down["x_index"], down.Low - down.Close, bottom=down.Close, width=width2, color=downColor)

@@ -1,5 +1,5 @@
 brand = "#13f7c9"
-brandInvert = "#ff0033"
+red = "#ff0033"
 yellow = "#ffc600"
 bgDark = "#0a131b"
 arrowDown = "▼"
