@@ -340,7 +340,9 @@ class Charts:
         ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
         history = stock.history(start=start-timedelta(days=730), end=end, interval="1d") # 2018 to give prophet data to base off of
         if history.empty: return
-
+        
+        # Remove timezone from index to allow naive datetime string slicing
+        if history.index.tz is not None: history.index = history.index.tz_localize(None)
         window = history.loc[start.strftime('%Y-%m-%d'):end.strftime('%Y-%m-%d')]
         daily = window.resample("D").interpolate()
         if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
