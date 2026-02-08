@@ -286,18 +286,27 @@ class Charts:
                 # Fit/predict can produce numerical overflow warnings (logistic growth exp); suppress them and sanitize outputs
                 with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
                     config.fit(data)
-                    # in-sample prediction to estimate residual sigma
                     in_sample = config.predict(data)
                     residuals = data['y'].values - in_sample['yhat'].values
-                    sigma = float(np.nanstd(residuals)) if len(residuals) > 0 else 0.0
+                    scalar_sigma = float(np.nanstd(residuals)) if len(residuals) > 0 else 0.0
 
-                    future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
+                    future = config.make_future_dataframe(periods=forward, freq=settings[1])
                     future['cap'] = cap
                     future['floor'] = floor
                     fcst = config.predict(future)
 
                 rawTrend = fcst.tail(forward)["yhat"].values
                 rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
+
+                # derive per-day sigma from prophet's intervals (95% CI -> z ~= 1.959)
+                try:
+                    z = norm.ppf(0.975)
+                    upper = fcst.tail(forward)["yhat_upper"].values
+                    lower = fcst.tail(forward)["yhat_lower"].values
+                    sigma_series = (np.nan_to_num(upper, nan=curPrice) - np.nan_to_num(lower, nan=curPrice)) / (2.0 * z)
+                    sigma_series = np.nan_to_num(sigma_series, nan=scalar_sigma, posinf=scalar_sigma, neginf=scalar_sigma)
+                except Exception:
+                    sigma_series = np.full(len(rawTrend), scalar_sigma, dtype=float)
 
                 # attach to current day value (offset)
                 if len(rawTrend) > 0:
@@ -307,13 +316,13 @@ class Charts:
 
                 if not np.all(np.isfinite(curve)):
                     curve = np.full(forward, curPrice)
-                    sigma = 0.0
+                    sigma_series = np.full(forward, 0.0)
 
                 with self._thread:
-                    # cache a tuple of (curve, sigma)
-                    self._cache[key] = (curve, sigma)
+                    # cache a tuple of (curve, sigma_series)
+                    self._cache[key] = (curve, sigma_series)
                 results.append(curve)
-                sigmas.append(sigma)
+                sigmas.append(sigma_series)
             except Exception: results.append(np.full(forward, curPrice))
                 
         # ensure sigmas list aligns with results; for any cached-only entries sigmas already appended
@@ -515,15 +524,20 @@ class Charts:
             future, sigmas = self._forecast(stock, history, histories, lastDate, forward=forward+1)
             if future is None: return None
             prophetTrend = np.dot(bestWeight, future)
-            # combine per-model sigmas into ensemble sigma (error propagation assuming independence)
+
+            # sigmas is now (n_models, days). combine per-day via quadrature using weights
             try:
-                sigmas = np.array(sigmas, dtype=float)
-                bw = np.array(bestWeight, dtype=float)
-                prophetSigma = float(np.sqrt(np.sum((bw * sigmas) ** 2)))
-                if not np.isfinite(prophetSigma) or prophetSigma <= 0:
-                    prophetSigma = 1.0
+                sigmas = np.array(sigmas, dtype=float)  # shape (n_models, days)
+                bw = np.array(bestWeight, dtype=float)  # shape (n_models,)
+                prophetSigma = np.sqrt(np.sum((bw[:, None] * sigmas) ** 2, axis=0))  # shape (days,)
+                # defensive fallback to scalar if something went wrong
+                if prophetSigma.size == 0 or not np.all(np.isfinite(prophetSigma)):
+                    prophetSigma = np.full(prophetTrend.shape, 1.0)
             except Exception:
-                prophetSigma = 1.0
+                prophetSigma = np.full(prophetTrend.shape, 1.0)
+
+            # build quantile curves using per-day sigma (broadcasts)
+            points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
             
             if model == 1:
                 if prophetTrend is None: raise ValueError("Prophet generation failed")
