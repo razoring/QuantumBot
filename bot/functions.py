@@ -444,12 +444,12 @@ class Charts:
         cursor.execute(f"select weight, updated from ticker where ticker = '{ticker}'")
         rows = cursor.fetchone()
 
+        points = []
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
         
         # skip backtest for IV only
-        points = []
         if model != 0: # only train if necessary
             bias = None
             train = True
