@@ -1,5 +1,4 @@
 IMPORTANT:
-FIX AGGREGATE NOT USING IV
 Chart Considerations (Earnings, Dividends, etc)
 - Yahoo Analyst Predictions
 Accuracy as of date labels
@@ -28,6 +27,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+FIX AGGREGATE NOT USING IV
 Fix template /chart or /predict type
 Registration
 Full cache system

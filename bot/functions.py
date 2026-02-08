@@ -218,7 +218,7 @@ class Charts:
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
         if today not in history.index:
             locs = history.index.get_indexer([today], method='pad')
-            if locs[0] == -1: return None
+            if locs[0] == -1: return (None, None)
             lastDate = history.index[locs[0]]
         else: lastDate = today
 
@@ -234,6 +234,7 @@ class Charts:
 
         curPrice = history.loc[lastDate]["Close"]
         results = []
+        sigmas = []
 
         for h, settings in configs.items():
             startDate = lastDate - timedelta(days=int(h))
@@ -248,7 +249,13 @@ class Charts:
             with self._thread: cached = self._cache.get(key)
             
             if cached is not None:
-                results.append(cached)
+                # cached may be either (curve, sigma) or legacy curve-only
+                if isinstance(cached, (list, tuple)) and len(cached) == 2:
+                    results.append(cached[0])
+                    sigmas.append(cached[1])
+                else:
+                    results.append(cached)
+                    sigmas.append(0.0)
                 continue
 
             data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
@@ -272,14 +279,18 @@ class Charts:
                 n_changepoints=self._inflections, #reduction for overfitting
                 changepoint_prior_scale=self._flexibility, # how stiff/elastic trend is
                 changepoint_range=self._range,
-                #uncertainty_samples=self._samples,
-                uncertainty_samples=0, # speed up calc
+                uncertainty_samples=self._samples
             )
             
             try:
                 # Fit/predict can produce numerical overflow warnings (logistic growth exp); suppress them and sanitize outputs
                 with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
                     config.fit(data)
+                    # in-sample prediction to estimate residual sigma
+                    in_sample = config.predict(data)
+                    residuals = data['y'].values - in_sample['yhat'].values
+                    sigma = float(np.nanstd(residuals)) if len(residuals) > 0 else 0.0
+
                     future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
                     future['cap'] = cap
                     future['floor'] = floor
@@ -289,15 +300,28 @@ class Charts:
                 rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
 
                 # attach to current day value (offset)
-                if len(rawTrend) > 0: curve = rawTrend + (curPrice - rawTrend[0]) #curve = np.clip(curve, floor, cap) #clip incase past limits
-                else: curve = np.full(forward, curPrice)
+                if len(rawTrend) > 0:
+                    curve = rawTrend + (curPrice - rawTrend[0])
+                else:
+                    curve = np.full(forward, curPrice)
 
-                if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
-                with self._thread: self._cache[key] = curve
+                if not np.all(np.isfinite(curve)):
+                    curve = np.full(forward, curPrice)
+                    sigma = 0.0
+
+                with self._thread:
+                    # cache a tuple of (curve, sigma)
+                    self._cache[key] = (curve, sigma)
                 results.append(curve)
+                sigmas.append(sigma)
             except Exception: results.append(np.full(forward, curPrice))
+                
+        # ensure sigmas list aligns with results; for any cached-only entries sigmas already appended
+        if len(sigmas) < len(results):
+            # fill missing sigmas with zeros
+            sigmas.extend([0.0] * (len(results) - len(sigmas)))
 
-        return np.vstack(results)
+        return np.vstack(results), np.array(sigmas)
 
     def _smapeLoss(self, w, raw, actuals):
         tune = 0
@@ -360,7 +384,7 @@ class Charts:
         for origin, price in origins.items(): #origin = fridays
             if progress: progress(f"Training: {origin} (this may take a few minutes)")
             bias = {90:[bestWeight[0], "ME"], 180:[bestWeight[1], "ME"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "W"], 1825:[bestWeight[4], "YS"]}
-            rawCurves = self._forecast(stock, window, bias, origin, forward=90)
+            rawCurves, _ = self._forecast(stock, window, bias, origin, forward=90)
             
             if rawCurves is None: continue
             targetDates = [origin + timedelta(days=i) for i in range(90)]
@@ -476,20 +500,30 @@ class Charts:
             actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward] # truncate just in case
             
             if len(actuals) > 20:
-                raw = self._forecast(stock, window, histories, startDate, forward=len(actuals))
-                const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
-                bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
-                
-                guess = [0.2, 0.2, 0.2, 0.2, 0.2]
-                result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
-                bestWeight = result.x
+                raw, _ = self._forecast(stock, window, histories, startDate, forward=len(actuals))
+                if raw is None:
+                    bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+                else:
+                    const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
+                    bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
+                    guess = [0.2, 0.2, 0.2, 0.2, 0.2]
+                    result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
+                    bestWeight = result.x
             else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
             if progress: progress("Generating Shareable Image...")
 
-            future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
+            future, sigmas = self._forecast(stock, history, histories, lastDate, forward=forward+1)
             if future is None: return None
             prophetTrend = np.dot(bestWeight, future)
-            prophetSigma = 3
+            # combine per-model sigmas into ensemble sigma (error propagation assuming independence)
+            try:
+                sigmas = np.array(sigmas, dtype=float)
+                bw = np.array(bestWeight, dtype=float)
+                prophetSigma = float(np.sqrt(np.sum((bw * sigmas) ** 2)))
+                if not np.isfinite(prophetSigma) or prophetSigma <= 0:
+                    prophetSigma = 1.0
+            except Exception:
+                prophetSigma = 1.0
             
             if model == 1:
                 if prophetTrend is None: raise ValueError("Prophet generation failed")
