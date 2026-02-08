@@ -1,5 +1,5 @@
 IMPORTANT:
-Fix template /chart or /predict type
+FIX AGGREGATE NOT USING IV
 Chart Considerations (Earnings, Dividends, etc)
 - Yahoo Analyst Predictions
 Accuracy as of date labels
@@ -28,6 +28,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Fix template /chart or /predict type
 Registration
 Full cache system
 Database Implementation (https://drawsql.app/teams/razoringg/diagrams/quantum-bot)

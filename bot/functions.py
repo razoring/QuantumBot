@@ -13,7 +13,8 @@ import yfinance as yf
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from matplotlib.ticker import FormatStrFormatter
+from matplotlib.ticker import FormatStrFormatter, FuncFormatter, MaxNLocator
+from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Polygon
 from matplotlib.colors import LinearSegmentedColormap, to_rgba
 from scipy.interpolate import CubicSpline
@@ -38,13 +39,14 @@ connection = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),passwo
 if not connection: raise Exception("Cannot connect to database")
 
 class Stamp:
-    def __init__(self, name, url, icon):
+    def __init__(self, name, url, icon, styles, factors=[]):
         self.serverName = name
         self.serverInvite = str(url)
         self.serverIcon = icon
+        self.factors = factors
+        self.styles:str = styles
 
-    def _font(self, size: int):
-        return ImageFont.truetype(font="bot/assets/Montserrat-Bold.ttf", size=size)
+    def _font(self, size: int): return ImageFont.truetype(font="bot/assets/Montserrat-Bold.ttf", size=size)
 
     def _rounded(self, image: Image.Image, radius: int) -> Image.Image:
         image = image.convert("RGBA")
@@ -79,11 +81,8 @@ class Stamp:
                 serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
         except Exception:
             # fallback to bundled placeholder icon
-            try:
-                serverIcon = Image.open("bot/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
-            except Exception:
-                # last-resort: create a blank icon
-                serverIcon = Image.new("RGBA", (93, 93), (112, 128, 144, 255))
+            try: serverIcon = Image.open("bot/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
+            except Exception: serverIcon = Image.new("RGBA", (93, 93), (112, 128, 144, 255)) # last-resort: create a blank icon
 
         #Compositing
         img.paste(chartImg, (50, 250), mask=chartImg)
@@ -98,6 +97,13 @@ class Stamp:
         canvas = ImageDraw.Draw(im=img)
         canvas.text(xy=(1153, 75), text=self.serverName, font=self._font(48), fill="white")
         canvas.text(xy=(1153, 135), text=self.serverInvite.replace("https://", ""), font=self._font(28), fill=(112, 128, 144))
+        canvas.text(xy=(5,5), text="VALID: "+datetime.now().strftime("%M.%d.%Y @ %H:%M:%S"), font=self._font(15), fill=(56,68,80))
+        canvas.text(xy=(688,95) if "predict" in self.styles else (709,95),text=self.styles, font=self._font(48), fill=themes.brand)
+
+        if "predict" in self.styles:
+            canvas.text(xy=(1965, 62), text="Considerations Affecting Prediction:", font=self._font(16), fill='white')
+        else:
+            canvas.text(xy=(2007, 62), text="Ticker Information:", font=self._font(16), fill="white")
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -306,7 +312,7 @@ class Charts:
         pEnd = preds[-1]
         change = abs((pEnd-pStart)/pStart)
         penalty = 0
-        penalty = tune*np.sum(w*np.log((w+1e-8)*5)) #normalization
+        #penalty = tune*np.sum(w*np.log((w+1e-8)*5)) #normalization
         if change > 0.30: penalty = (change - 0.30) * 2.0
         
         return smape + penalty
@@ -376,7 +382,8 @@ class Charts:
             initGuess = np.array(bestWeight, dtype=float)
             initGuess = initGuess / np.sum(initGuess)
             
-            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
+            #res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
+            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP')
             bestWeight = res.x.tolist()
             bestError = res.fun
             try: errors.append(float(res.fun))
@@ -510,7 +517,7 @@ class Charts:
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
 
         allDates = list(plotHistory.index) + futureDates
-        self._formatAxes(ax, allDates, minY, maxY, median[-1])
+        self._formatAxes(ax, allDates, minY, maxY, median[-1], formatX=True)
         
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
@@ -519,7 +526,7 @@ class Charts:
 
         chartBuf = self._buffer(fig)
         if progress: progress("Finalizing Image...")
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict").image(chartBuf)
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -620,12 +627,9 @@ class Charts:
         ax.spines["bottom"].set_color(themes.grayDark)
         
         ax.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
-        if formatX:
-            ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
-        
+        if formatX:ax.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
         ax.set_ylim(minY * 0.98, maxY * 1.02)
-        if formatX:
-            ax.set_xlim(dates[0], dates[-1])
+        if formatX: ax.set_xlim(dates[0], dates[-1])
 
     def _drawGradient(self, ax, xNums, yVals, minY, color):
         yFloor = minY * 0.90
@@ -667,8 +671,17 @@ class Charts:
         if history.index.tz is None: history.index = history.index.tz_localize("UTC")
         history.index = history.index.tz_convert("America/New_York")
 
-        fig, ax1 = self._setupFigure()
-        ax2 = ax1.twinx()
+        plt.rc("font", size=10)
+        fig = plt.figure(figsize=(20, 10), dpi=100)
+        
+        # Create a GridSpec with two rows, height ratio 3:1 (price:volume), no initial vertical space (hspace=0.0)
+        gs = fig.add_gridspec(2, 1, height_ratios=[3, 1], hspace=0.0) 
+        ax1 = fig.add_subplot(gs[0]) # Price chart (top)
+        ax2 = fig.add_subplot(gs[1], sharex=ax1) # Volume chart (bottom), sharing x-axis
+        
+        fig.patch.set_facecolor(color=themes.bgDark)
+        ax1.set_facecolor(themes.bgDark)
+        ax2.set_facecolor(themes.bgDark)
 
         history = history.copy()
         history["x_index"] = np.arange(len(history))
@@ -679,7 +692,7 @@ class Charts:
         width2 = 0.08 
 
         maxVol = history.Volume.max()
-        ax2.set_ylim(0, maxVol * 4) 
+        ax2.set_ylim(0, maxVol) 
         
         vol_colors = [themes.brand if c >= o else themes.red for c, o in zip(history.Close, history.Open)]
         ax2.bar(history["x_index"], history.Volume, width=width, color=vol_colors, alpha=0.5)
@@ -688,14 +701,13 @@ class Charts:
         ax2.yaxis.set_label_position("left")
         ax2.spines["right"].set_visible(False)
         ax2.spines["top"].set_visible(False)
-        ax2.spines["bottom"].set_visible(False)
+        ax2.spines["bottom"].set_color(themes.grayDark) # Set color for the bottom spine
         ax2.spines["left"].set_color(themes.grayDark)
         ax2.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark, labelsize=8)
         
-        from matplotlib.ticker import FuncFormatter, MaxNLocator
         def vol_format(x, pos): return Humanizer.suffix(x)
         ax2.yaxis.set_major_formatter(FuncFormatter(vol_format))
-        ax2.yaxis.set_major_locator(MaxNLocator(nbins=50))
+        ax2.yaxis.set_major_locator(MaxNLocator(nbins=5))
 
         ax1.set_zorder(10)
         ax1.patch.set_visible(False)
@@ -724,27 +736,27 @@ class Charts:
                 else: return date_val.strftime("%Y")
             return ""
 
-        ax1.xaxis.set_major_formatter(FuncFormatter(formatDate))
-        ax1.xaxis.set_major_locator(MaxNLocator(nbins=10))
-        ax1.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark)
+        plt.setp(ax1.get_xticklabels(), visible=False)
+        ax1.tick_params(axis='x', which='both', length=0)
+        ax1.spines["bottom"].set_visible(False)
         
-        self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
-        ax1.set_xlim(-0.5, len(history) - 0.5)
+        ax2.xaxis.set_major_formatter(FuncFormatter(formatDate))
+        ax2.xaxis.set_major_locator(MaxNLocator(nbins=10))
+        ax2.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark, rotation=45) 
+        
+        self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice)
+        ax1.set_xlim(-0.5, len(history)-0.5)
+        ax2.set_xlim(-0.5, len(history)-0.5) # Set x-limits for volume plot to match price
 
-        #ax1.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
-        ax1.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
-        #ax1.set_axisbelow(True) 
+        ax1.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
+        ax2.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark) # Apply x-grid to volume plot
 
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
-        ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), 
-                    xytext=(5, 0), textcoords="offset points", va="center", ha="left", 
-                    color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
-
-        plt.title(f"{str.upper(ticker)} History ({duration})", 
-                  fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
+        ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
+        ax1.set_title(f"{str.upper(ticker)} History ({duration})", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center", pad=20) 
 
         chartBuf = self._buffer(fig)
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon).image(chartBuf, displayLegend=False)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart").image(chartBuf, displayLegend=False)
 
 class User():
     def __init__(self, discordID):
