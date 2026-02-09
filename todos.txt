@@ -1,7 +1,6 @@
 IMPORTANT:
 Chart Considerations (Earnings, Dividends, etc)
 - Yahoo Analyst Predictions
-Accuracy as of date labels
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
 
@@ -27,6 +26,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Accuracy as of date labels
 FIX AGGREGATE NOT USING IV
 Fix template /chart or /predict type
 Registration
