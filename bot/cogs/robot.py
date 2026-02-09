@@ -195,14 +195,15 @@ class Robot(commands.Cog):
         app_commands.Choice(name="2 Minutes Between", value="2m"),
         app_commands.Choice(name="15 Minutes Between", value="15m"),
         app_commands.Choice(name="30 Minutes Between", value="30m"),
-        app_commands.Choice(name="1 Hour Between", value="1h"),
-        app_commands.Choice(name="7 Days Between", value="1wk"),
+        app_commands.Choice(name="1 Hour Between", value="60m"),
+        app_commands.Choice(name="1 Day Between", value="1d"),
+        app_commands.Choice(name="1 Week (5d) Between", value="5d"),
         app_commands.Choice(name="1 Month Between", value="1mo"),
         app_commands.Choice(name="3 Months Between", value="3mo"), #1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
     ])
     async def chart(self, interaction: discord.Interaction, ticker: str, duration:str, interval: typing.Optional[app_commands.Choice[str]]):
         try:
-            await interaction.response.defer()
+            await interaction.response.defer(ephemeral=True)
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
             sanity = self.lookup(ticker,boolean=True)
             if sanity == False:
@@ -226,7 +227,7 @@ class Robot(commands.Cog):
 
             loop = asyncio.get_running_loop()
 
-            async def edit_status(text: str):
+            async def edit(text: str):
                 try:
                     e = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
                     e.description = text
@@ -234,16 +235,20 @@ class Robot(commands.Cog):
                 except Exception: pass
 
             # thread-safe callback to be passed into the history function
-            def progress_cb(text: str):
-                try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
+            def progress(text: str):
+                try: loop.call_soon_threadsafe(asyncio.create_task, edit(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon, progress_cb)
+            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, interaction.guild.name, invite.url, icon, progress)
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
                 await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update, ephemeral=False)
                 await status.delete()
+        except AssertionError as e:
+            embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+            embed.description = "Please check your intervals and duration again."
+            await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")

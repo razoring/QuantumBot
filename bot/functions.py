@@ -97,7 +97,7 @@ class Stamp:
         canvas = ImageDraw.Draw(im=img)
         canvas.text(xy=(1153, 75), text=self.serverName, font=self._font(48), fill="white")
         canvas.text(xy=(1153, 135), text=self.serverInvite.replace("https://", ""), font=self._font(28), fill=(112, 128, 144))
-        canvas.text(xy=(5,5), text="VALID: "+datetime.now().strftime("%M.%d.%Y @ %H:%M:%S"), font=self._font(15), fill=(56,68,80))
+        canvas.text(xy=(5,5), text="Source: finance.yahoo.com (valid: "+datetime.now().strftime("%m/%d/%Y @ %H:%M:%S")+")", font=self._font(15), fill=(56,68,80))
         canvas.text(xy=(688,95) if "predict" in self.styles else (709,95),text=self.styles, font=self._font(48), fill=themes.brand)
 
         if "predict" in self.styles:
@@ -597,7 +597,7 @@ class Charts:
             elif dates[-1].year != dates[0].year: fmt = "%b %Y"
             else: fmt = "%b %d"
             
-            ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+            ax.xaxis.set_major_locator(MaxNLocator(nbins=24, min_n_ticks=16))
             ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
             ax.tick_params(axis="x", rotation=90, colors=themes.grayDark, labelcolor=themes.grayDark)
         
@@ -653,17 +653,40 @@ class Charts:
         buf.seek(0)
         return buf
 
-    def history(self, ticker, duration, serverName, serverInvite, serverIcon, progress=None):
+    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, progress=None):
         stock = yf.Ticker(ticker)
-        
+        periods = ["1d","5d","1mo","3mo","6mo","1y","ytd","2y","5y","10y","max"]
+        intervals = ["2m","15m","30m","60m","1d","5d","1mo","3mo"]
+
+        preview = duration
+        if duration == "ytd" or duration == "1y": # swap ytd and 1y because it's mixed up in api???? monitor the api for changes (prob a bug)
+            swaps = ["ytd","1y"]
+            duration = swaps[not bool(swaps.index(duration))]
+
         if progress: progress("Retrieving Historical Data...")
-        interval = "1d"
-        if duration in ["1d"]: interval = "2m"
-        elif duration in ["5d"]: interval = "30m"
-        elif duration in ["1mo", "3mo"]: interval = "1d"
-        elif duration in ["6mo", "1y"]: interval = "1wk"
-        elif duration in ["2y", "5y"]: interval = "1mo"
-        else: interval = "3mo"
+        if interval is None:
+            interval = "1d"
+            if duration in ["1d"]: interval = "2m"
+            elif duration in ["5d"]: interval = "60m"
+            elif duration in ["1mo", "3mo"]: interval = "1d"
+            elif duration in ["6mo", "1y", "ytd"]: interval = "5d"
+            elif duration in ["2y", "5y"]: interval = "1mo"
+            else: interval = "3mo"
+        else: assert interval in intervals, "Not valid interval"
+        assert intervals.index(interval)-4 < periods.index(duration), "Interval more than period"
+
+        def formatDate(x, pos=None):
+            idx = int(x)
+            if 0 <= idx < len(history):
+                date = history.index[idx]
+                string = ""
+                if periods.index(duration) > periods.index("1mo") and periods.index(duration) <= periods.index("2y"): string+="%b " # if more than month and less than or year, append short month (Feb)
+                if periods.index(duration) >= periods.index("5d") and periods.index(duration) <= periods.index("1mo"): string+="%a " # if 5d or same month, append short weekday (Mon)
+                if periods.index(duration) >= periods.index("1mo") and periods.index(duration) <= periods.index("ytd") : string+="%d " # if more than week and less than a year, append day instead (01)
+                if periods.index(duration) > periods.index("1y") : string+="%Y " # if more than year, also append year (2020)
+                if intervals.index(interval) <= intervals.index("1d"): string+=(str(date.strftime("%I")).replace("0","")+":%M %p") # if interval less than a day, append time as AM/PM (09:00 PM)
+                return date.strftime(string)
+            return ""
 
         history = stock.history(period=duration, interval=interval)
         if history.empty: return None
@@ -671,7 +694,7 @@ class Charts:
         if history.index.tz is None: history.index = history.index.tz_localize("UTC")
         history.index = history.index.tz_convert("America/New_York")
 
-        plt.rc("font", size=10)
+        #plt.rc("font", size=10)
         fig = plt.figure(figsize=(20, 10), dpi=100)
         
         # Create a GridSpec with two rows, height ratio 3:1 (price:volume), no initial vertical space (hspace=0.0)
@@ -697,17 +720,18 @@ class Charts:
         vol_colors = [themes.brand if c >= o else themes.red for c, o in zip(history.Close, history.Open)]
         ax2.bar(history["x_index"], history.Volume, width=width, color=vol_colors, alpha=0.5)
         
-        ax2.yaxis.tick_left()
-        ax2.yaxis.set_label_position("left")
-        ax2.spines["right"].set_visible(False)
+        ax2.yaxis.tick_right()
+        ax2.yaxis.set_label_position("right")
+        ax1.spines["bottom"].set_color(themes.grayDark)
+        ax2.spines["left"].set_visible(False)
         ax2.spines["top"].set_visible(False)
         ax2.spines["bottom"].set_color(themes.grayDark) # Set color for the bottom spine
-        ax2.spines["left"].set_color(themes.grayDark)
+        ax2.spines["right"].set_color(themes.grayDark)
         ax2.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark, labelsize=8)
         
         def volume(x, pos): return Humanizer.suffix(x)
         ax2.yaxis.set_major_formatter(FuncFormatter(volume))
-        ax2.yaxis.set_major_locator(MaxNLocator(nbins=5))
+        ax2.yaxis.set_major_locator(MaxNLocator(nbins=8))
 
         ax1.set_zorder(10)
         ax1.patch.set_visible(False)
@@ -725,23 +749,13 @@ class Charts:
         maxY = history["High"].max()
         lastPrice = history["Close"].iloc[-1]
 
-        def formatDate(x, pos=None):
-            idx = int(x)
-            if 0 <= idx < len(history):
-                date_val = history.index[idx]
-                if duration == "1d": return date_val.strftime("%H:%M")
-                elif duration == "5d":  return date_val.strftime("%b %d\n%H:%M")
-                elif duration in ["1mo", "3mo", "6mo", "1y"]: return date_val.strftime("%b %d")
-                elif duration in ["ytd", "2y", "5y"]: return date_val.strftime("%b %Y")
-                else: return date_val.strftime("%Y")
-            return ""
-
         plt.setp(ax1.get_xticklabels(), visible=False)
         ax1.tick_params(axis='x', which='both', length=0)
-        ax1.spines["bottom"].set_visible(False)
         
+        ax2.xaxis.set_major_locator(MaxNLocator(nbins=min(64, len(history)), min_n_ticks=1, integer=True))
         ax2.xaxis.set_major_formatter(FuncFormatter(formatDate))
-        ax2.xaxis.set_major_locator(MaxNLocator(22))
+        uniques = sorted(set(ax2.get_xticks()))
+        ax2.set_xticks(uniques)
         ax2.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark, rotation=90) 
         
         self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
@@ -749,11 +763,13 @@ class Charts:
         ax2.set_xlim(-0.5, len(history)-0.5) # Set x-limits for volume plot to match price
 
         ax1.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
-        ax2.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark) # Apply x-grid to volume plot
+        ax1.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
+        ax2.grid(True, which="major", axis="y", linestyle="--", alpha=0.5, color=themes.grayDark)
+        ax2.grid(True, which="major", axis="x", linestyle=":", alpha=0.3, color=themes.grayDark)
 
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
-        ax1.set_title(f"{str.upper(ticker)} History ({duration})", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center", pad=20) 
+        ax1.set_title(f"{str.upper(ticker)} History ({preview})", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center", pad=20) 
 
         if progress: progress("Generating Chart...")
         chartBuf = self._buffer(fig)
