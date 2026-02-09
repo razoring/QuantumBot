@@ -101,7 +101,7 @@ class Stamp:
         canvas.text(xy=(688,95) if "predict" in self.styles else (709,95),text=self.styles, font=self._font(48), fill=themes.brand)
 
         if "predict" in self.styles:
-            canvas.text(xy=(1965, 62), text="Considerations Affecting Prediction:", font=self._font(16), fill='white')
+            canvas.text(xy=(1953, 62), text="Considerations Affecting Prediction:", font=self._font(16), fill='white')
         else:
             canvas.text(xy=(2007, 62), text="Ticker Information:", font=self._font(16), fill="white")
 
@@ -211,7 +211,7 @@ class Charts:
         self._inflections = 20 # number of bends
         self._flexibility = 0.05 # controls over/underfitting
         self._range = 0.8 # up to what percentage of the history prophet learns from (0.0-1.0)
-        self._samples = 500 # how smooth, more = smoother
+        self._samples = 1500 # how smooth, more = smoother
         self._seasonality = 10 # controls over/underfitting of the seasons
     
     def _forecast(self, stock, history, configs, today, forward=90):
@@ -410,12 +410,11 @@ class Charts:
 
         cursor.execute(
             """
-            INSERT INTO ticker (ticker, sector, industry, active, accuracy, weight, updated)
-            VALUES (%s, %s, %s, true, %s, %s, %s)
+            INSERT INTO ticker (ticker, sector, industry, accuracy, weight, updated)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (ticker) DO UPDATE SET
                 sector = EXCLUDED.sector,
                 industry = EXCLUDED.industry,
-                active = EXCLUDED.active,
                 accuracy = EXCLUDED.accuracy,
                 weight = EXCLUDED.weight,
                 updated = EXCLUDED.updated;
@@ -598,9 +597,9 @@ class Charts:
             elif dates[-1].year != dates[0].year: fmt = "%b %Y"
             else: fmt = "%b %d"
             
-            ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=10, maxticks=15))
+            ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
             ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
-            ax.tick_params(axis="x", rotation=45, colors=themes.grayDark, labelcolor=themes.grayDark)
+            ax.tick_params(axis="x", rotation=90, colors=themes.grayDark, labelcolor=themes.grayDark)
         
         yRange = maxY - minY
         if yRange == 0: yRange = 1
@@ -654,15 +653,16 @@ class Charts:
         buf.seek(0)
         return buf
 
-    def history(self, ticker, duration, serverName, serverInvite, serverIcon):
+    def history(self, ticker, duration, serverName, serverInvite, serverIcon, progress=None):
         stock = yf.Ticker(ticker)
         
+        if progress: progress("Retrieving Historical Data...")
         interval = "1d"
         if duration in ["1d"]: interval = "2m"
-        elif duration in ["5d"]: interval = "15m"
-        elif duration in ["1mo"]: interval = "1d"
-        elif duration in ["3mo", "6mo"]: interval = "1wk"
-        elif duration in ["1y", "2y"]: interval = "1mo"
+        elif duration in ["5d"]: interval = "30m"
+        elif duration in ["1mo", "3mo"]: interval = "1d"
+        elif duration in ["6mo", "1y"]: interval = "1wk"
+        elif duration in ["2y", "5y"]: interval = "1mo"
         else: interval = "3mo"
 
         history = stock.history(period=duration, interval=interval)
@@ -705,8 +705,8 @@ class Charts:
         ax2.spines["left"].set_color(themes.grayDark)
         ax2.tick_params(axis="y", colors=themes.grayDark, labelcolor=themes.grayDark, labelsize=8)
         
-        def vol_format(x, pos): return Humanizer.suffix(x)
-        ax2.yaxis.set_major_formatter(FuncFormatter(vol_format))
+        def volume(x, pos): return Humanizer.suffix(x)
+        ax2.yaxis.set_major_formatter(FuncFormatter(volume))
         ax2.yaxis.set_major_locator(MaxNLocator(nbins=5))
 
         ax1.set_zorder(10)
@@ -731,8 +731,8 @@ class Charts:
                 date_val = history.index[idx]
                 if duration == "1d": return date_val.strftime("%H:%M")
                 elif duration == "5d":  return date_val.strftime("%b %d\n%H:%M")
-                elif duration in ["1mo", "3mo", "6mo", "ytd"]: return date_val.strftime("%b %d")
-                elif duration in ["1y", "2y"]: return date_val.strftime("%b %Y")
+                elif duration in ["1mo", "3mo", "6mo", "1y"]: return date_val.strftime("%b %d")
+                elif duration in ["ytd", "2y", "5y"]: return date_val.strftime("%b %Y")
                 else: return date_val.strftime("%Y")
             return ""
 
@@ -741,10 +741,10 @@ class Charts:
         ax1.spines["bottom"].set_visible(False)
         
         ax2.xaxis.set_major_formatter(FuncFormatter(formatDate))
-        ax2.xaxis.set_major_locator(MaxNLocator(nbins=10))
-        ax2.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark, rotation=45) 
+        ax2.xaxis.set_major_locator(MaxNLocator(22))
+        ax2.tick_params(axis="x", colors=themes.grayDark, labelcolor=themes.grayDark, rotation=90) 
         
-        self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice)
+        self._formatAxes(ax1, history["x_index"].values, minY, maxY, lastPrice, formatX=False)
         ax1.set_xlim(-0.5, len(history)-0.5)
         ax2.set_xlim(-0.5, len(history)-0.5) # Set x-limits for volume plot to match price
 
@@ -755,7 +755,9 @@ class Charts:
         ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
         ax1.set_title(f"{str.upper(ticker)} History ({duration})", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center", pad=20) 
 
+        if progress: progress("Generating Chart...")
         chartBuf = self._buffer(fig)
+        if progress: progress("Finalizing Chart...")
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart").image(chartBuf, displayLegend=False)
 
 class User():

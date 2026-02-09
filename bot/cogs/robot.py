@@ -177,7 +177,7 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
-    @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph")
+    @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph", interval="How much to zoom in for the range of data")
     @app_commands.choices(duration=[
         app_commands.Choice(name="Past 24 Hours (1d)", value="1d"),
         app_commands.Choice(name="Past Week (5d)", value="5d"),
@@ -191,7 +191,16 @@ class Robot(commands.Cog):
         app_commands.Choice(name="Past 10 Years (10y)", value="10y"),
         app_commands.Choice(name="Maximum displayable (all)", value="max"),
     ])
-    async def chart(self, interaction: discord.Interaction, ticker: str, duration:str):
+    @app_commands.choices(interval=[
+        app_commands.Choice(name="2 Minutes Between", value="2m"),
+        app_commands.Choice(name="15 Minutes Between", value="15m"),
+        app_commands.Choice(name="30 Minutes Between", value="30m"),
+        app_commands.Choice(name="1 Hour Between", value="1h"),
+        app_commands.Choice(name="7 Days Between", value="1wk"),
+        app_commands.Choice(name="1 Month Between", value="1mo"),
+        app_commands.Choice(name="3 Months Between", value="3mo"), #1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+    ])
+    async def chart(self, interaction: discord.Interaction, ticker: str, duration:str, interval: typing.Optional[app_commands.Choice[str]]):
         try:
             await interaction.response.defer()
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
@@ -211,11 +220,30 @@ class Robot(commands.Cog):
             invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
             icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
 
-            img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon)
+            loading = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
+            loading.description = "Starting..."
+            status = await interaction.followup.send(embed=loading)
+
+            loop = asyncio.get_running_loop()
+
+            async def edit_status(text: str):
+                try:
+                    e = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
+                    e.description = text
+                    await status.edit(embed=e)
+                except Exception: pass
+
+            # thread-safe callback to be passed into the history function
+            def progress_cb(text: str):
+                try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
+                except Exception: pass
+
+            img = await asyncio.to_thread(charts.history, ticker, duration, interaction.guild.name, invite.url, icon, progress_cb)
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
-                await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update)
+                await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update, ephemeral=False)
+                await status.delete()
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
