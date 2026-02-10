@@ -72,13 +72,10 @@ class Stamp:
                 serverIcon = Image.open(io.BytesIO(resp.content)).convert("RGBA").resize((93, 93))
             elif hasattr(self.serverIcon, "read"):
                 # file-like object (BytesIO etc.)
-                try:
-                    self.serverIcon.seek(0)
-                except Exception:
-                    pass
+                try: self.serverIcon.seek(0)
+                except Exception: pass
                 serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
-            else:
-                serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
+            else: serverIcon = Image.open(self.serverIcon).convert("RGBA").resize((93, 93))
         except Exception:
             # fallback to bundled placeholder icon
             try: serverIcon = Image.open("bot/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
@@ -97,13 +94,38 @@ class Stamp:
         canvas = ImageDraw.Draw(im=img)
         canvas.text(xy=(1153, 75), text=self.serverName, font=self._font(48), fill="white")
         canvas.text(xy=(1153, 135), text=self.serverInvite.replace("https://", ""), font=self._font(28), fill=(112, 128, 144))
-        canvas.text(xy=(5,5), text="Source: finance.yahoo.com (valid: "+datetime.now().strftime("%m/%d/%Y @ %H:%M:%S")+")", font=self._font(15), fill=(56,68,80))
         canvas.text(xy=(688,95) if "predict" in self.styles else (709,95),text=self.styles, font=self._font(48), fill=themes.brand)
+        canvas.text(xy=(2430,270), text="Source: finance.yahoo.com", font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
+        canvas.text(xy=(2430,290), text="Valid as of: "+datetime.now().strftime("%m/%d/%Y @ %H:%M:%S"), font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
+
+        bbox = [(1745,84),(2441,184)]
+        width = bbox[1][0]-bbox[0][0]
 
         if "predict" in self.styles:
-            canvas.text(xy=(1953, 62), text="Considerations Affecting Prediction:", font=self._font(16), fill='white')
+            width = math.floor(width/2)
+            bbox1 = [(1750,84),(2441-width,184)]
+            bbox2 = [(1740+width,84),(2441,184)]
+            canvas.rectangle(bbox1, fill="black") #test bounding boxes
+            canvas.rectangle(bbox2, fill="blue")
+            canvas.text(xy=(1953, 58), text="Considerations Affecting Prediction:", font=self._font(16), fill=(112, 128, 144))
         else:
-            canvas.text(xy=(2007, 62), text="Ticker Information:", font=self._font(16), fill="white")
+            width = math.floor(width/3)
+            bbox1 = [(1750,84),(2441-width*2,184)]
+            bbox2 = [(1740+width+20,84),(2441-width,184)]
+            bbox3 = [(1740+width*2,84),(2441,184)]
+
+            """canvas.rectangle(bbox1, fill="black") #test bounding boxes
+            canvas.rectangle(bbox2, fill="blue")
+            canvas.rectangle(bbox3, fill="red")"""
+
+            canvas.text(xy=(2007, 58), text="Current Ticker Information:", font=self._font(16), fill=(112, 128, 144))
+            if self.factors:
+                # segment 1: 52wk, volume, mkt cap
+                canvas.text(xy=bbox1[0], text="• 52 Week High: %s\n• 52 Week Low: %s\n• Volume: %s\n• Average Volume: %s\n• Market Cap: %s"%(round(self.factors["get52wkHigh"],2),round(self.factors["get52wkLow"],2),Humanizer.suffix(self.factors["getVolume"]),Humanizer.suffix(self.factors["getAvgVolume"]),Humanizer.suffix(self.factors["getMktCap"])), font=self._font(16), fill='white')
+                # segment 2: p/e, eps, yield (a, m)
+                canvas.text(xy=bbox2[0], text=( "• P/E Ratio: {}\n" "• EPS Ratio: {}\n" "• Beta: {}\n" "• Annual Yield: {}%\n" "• Monthly Yield: {}%" ).format( round(self.factors["getPERatio"], 2), round(self.factors["getEPSRatio"], 2), round(self.factors["getBeta"], 2), round(self.factors["getAnnualYield"], 2), round(self.factors["getMonthlyYield"], 2)), font=self._font(16), fill='white')
+                # segment 3: 
+                canvas.text(xy=bbox3[0], text = ( f"• Div. Amount: {self.factors['getDividendAmount']}\n" f"• Div. Change: {self.factors['getDividendChange']}\n" f"• Ex. Div. Date: {self.factors['getExDividendDate']}\n" f"• Pay Date: {self.factors['getPayDate']}" ), font=self._font(16), fill='white')
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")
@@ -653,7 +675,7 @@ class Charts:
         buf.seek(0)
         return buf
 
-    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, progress=None):
+    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, staticQuote, progress=None):
         stock = yf.Ticker(ticker)
         periods = ["1d","5d","1mo","3mo","6mo","1y","ytd","2y","5y","10y","max"]
         intervals = ["2m","15m","30m","60m","1d","5d","1mo","3mo"]
@@ -774,7 +796,7 @@ class Charts:
         if progress: progress("Generating Chart...")
         chartBuf = self._buffer(fig)
         if progress: progress("Finalizing Chart...")
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart").image(chartBuf, displayLegend=False)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart", factors=staticQuote).image(chartBuf, displayLegend=False)
 
 class User():
     def __init__(self, discordID):

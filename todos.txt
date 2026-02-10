@@ -1,9 +1,8 @@
 IMPORTANT:
-FIX /me???
-Chart Considerations (Earnings, Dividends, etc)
 - Yahoo Analyst Predictions
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
+Fix aiohttp.client_exceptions.ClientOSError: [Errno 1] [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2633) issue
 
 TBD SOON:
 Polymarket data
@@ -27,6 +26,8 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Chart Considerations (Earnings, Dividends, etc)
+FIX /me???
 Accuracy as of date labels
 FIX AGGREGATE NOT USING IV
 Fix template /chart or /predict type

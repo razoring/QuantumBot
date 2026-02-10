@@ -207,7 +207,7 @@ class Robot(commands.Cog):
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
             sanity = self.lookup(ticker,boolean=True)
             if sanity == False:
-                await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
             
             charts = functions.Charts()
@@ -239,7 +239,7 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, interaction.guild.name, invite.url, icon, progress)
+            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, interaction.guild.name, invite.url, icon, static, progress)
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
@@ -272,7 +272,7 @@ class Robot(commands.Cog):
             await interaction.response.defer(ephemeral=True)
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
             if self.lookup(ticker,boolean=True) == False:
-                await interaction.response.send_message(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
+                await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
             
             charts = functions.Charts()
@@ -343,8 +343,8 @@ class Robot(commands.Cog):
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
     async def me(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
         try:
-            interaction.response.defer()
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
             user = functions.User(discordID=interaction.user.id)
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")
