@@ -189,8 +189,7 @@ class yFinanceWrapper:
 
     def getAnnualYield(self):
         #Yahoo often puts the percentage in 'dividendYield' (0.05) and the dollar amount in 'trailingAnnualDividendRate' (1.50)
-        if "dividendYield" in self._info and self._info["dividendYield"] is not None:
-            return round(self._info["dividendYield"] * 100, 2)
+        if "dividendYield" in self._info and self._info["dividendYield"] is not None: return round(self._info["dividendYield"] * 100, 2)
         
         #Fallback
         rate = self._info.get("trailingAnnualDividendRate")
@@ -235,6 +234,8 @@ class Charts:
         self._range = 0.8 # up to what percentage of the history prophet learns from (0.0-1.0)
         self._samples = 1500 # how smooth, more = smoother
         self._seasonality = 10 # controls over/underfitting of the seasons
+        self._constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
+        self._bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0)) # give weight to long term memory to 2y + 5y + 1y
     
     def _forecast(self, stock, history, configs, today, forward=90):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
@@ -353,12 +354,12 @@ class Charts:
         cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
         row = cursor.fetchone()
 
-        default_weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+        defaults = [[0.1, 0.2, 0.2, 0.2, 0.3], 0]
         # If there's an existing row, use it as starting weight and mark as update; otherwise create defaults
-        if row is None: weight = default_weight
+        if row is None: weight = defaults
         else:
             try: weight = self.clean(row[0])
-            except Exception: weight = default_weight
+            except Exception: weight = defaults
 
         bestWeight = weight[0]
 
@@ -399,13 +400,10 @@ class Charts:
             matrix = rawCurves[:, validIndices]
             targets = np.array(actuals)
 
-            const = ({'type': 'eq', 'fun': lambda w:  np.sum(w) - 1.0})
-            bounds = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
             initGuess = np.array(bestWeight, dtype=float)
             initGuess = initGuess / np.sum(initGuess)
             
-            #res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=bounds, constraints=const)
-            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP')
+            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=self._bounds, constraints=self._constraints)
             bestWeight = res.x.tolist()
             bestError = res.fun
             try: errors.append(float(res.fun))
@@ -491,20 +489,19 @@ class Charts:
 
             histories = {90: [bias[0], "ME"], 180: [bias[1], "ME"], 365: [bias[2], "D"], 730: [bias[3], "W"], 1825: [bias[4], "YS"]} #fallbacks
             
-            # live optimization mini backtest on the spot: 
+            # live optimization on the spot: 
             startDate = lastDate - timedelta(days=90)
             window = history[history.index <= startDate]
             actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward] # truncate just in case
             
             if len(actuals) > 20:
                 raw = self._forecast(stock, window, histories, startDate, forward=len(actuals))
-                const = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}) #constraints
-                bounds = ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0), (0.05, 1.0), (0.05, 1.0)) # give weight to long term memory to 2y + 5y
-                
-                guess = [0.2, 0.2, 0.2, 0.2, 0.2]
-                result = minimize(self._smapeLoss, guess, args=(raw, actuals), method='SLSQP', bounds=bounds, constraints=const)
+                result = minimize(self._smapeLoss, bias, args=(raw, actuals), method='SLSQP', bounds=self._bounds, constraints=self._constraints)
                 bestWeight = result.x
-            else: bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+            else:
+                print("Array not big enough ")
+                bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+            #bestWeight = self._forecast(stock, window, histories, startDate, forward=len(actuals))
             if progress: progress("Generating Shareable Image...")
 
             future = self._forecast(stock, history, histories, lastDate, forward=forward+1)
