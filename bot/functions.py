@@ -104,10 +104,18 @@ class Stamp:
         if "predict" in self.styles:
             width = math.floor(width/2)
             bbox1 = [(1750,84),(2441-width,184)]
-            bbox2 = [(1740+width,84),(2441,184)]
-            canvas.rectangle(bbox1, fill="black") #test bounding boxes
-            canvas.rectangle(bbox2, fill="blue")
+            bbox2 = [(1740+width,84),(2436,184)]
+            #canvas.rectangle(bbox1, fill="black") #test bounding boxes
+            #canvas.rectangle(bbox2, fill="blue")
             canvas.text(xy=(1953, 58), text="Considerations Affecting Prediction:", font=self._font(16), fill=(112, 128, 144))
+
+            left, right = "",""
+            for i,v in enumerate(self.factors[:10]):
+                if i <=5: left += v+"\n"
+                else: right += v+"\n"
+
+            canvas.text(xy=bbox1[0], text=left, font=self._font(16), fill='white')
+            canvas.text(xy=bbox2[0], text=right, font=self._font(16), fill='white')
         else:
             width = math.floor(width/3)
             bbox1 = [(1750,84),(2441-width*2,184)]
@@ -231,7 +239,7 @@ class Charts:
         self._capacity = 64 # max cached items
         self._inflections = 20 # number of bends
         self._flexibility = 0.05 # controls over/underfitting
-        self._range = 0.8 # up to what percentage of the history prophet learns from (0.0-1.0)
+        self._range = 0.9 # up to what percentage of the history prophet learns from (0.0-1.0)
         self._samples = 1500 # how smooth, more = smoother
         self._seasonality = 10 # controls over/underfitting of the seasons
         self._constraints = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
