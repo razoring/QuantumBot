@@ -39,7 +39,7 @@ connection = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),passwo
 if not connection: raise Exception("Cannot connect to database")
 
 class Stamp:
-    def __init__(self, name, url, icon, styles, factors=[]):
+    def __init__(self, name, url, icon, styles, factors):
         self.serverName = name
         self.serverInvite = str(url)
         self.serverIcon = icon
@@ -102,6 +102,7 @@ class Stamp:
         width = bbox[1][0]-bbox[0][0]
 
         if "predict" in self.styles:
+            print(self.factors)
             width = math.floor(width/2)
             bbox1 = [(1750,84),(2441-width,184)]
             bbox2 = [(1740+width,84),(2436,184)]
@@ -550,9 +551,15 @@ class Charts:
         
         plt.title(f"{str.upper(ticker)} Prediction (90d)", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
+        factors = []
+        lastEarnings = stock.get_earnings_dates().index[0].tz_localize(None).date()
+        print(lastDate,lastEarnings)
+        if startDate.tz_localize(None) < pd.Timestamp(lastEarnings) < lastDate.tz_localize(None)+timedelta(days=90):
+            factors.append(f"Earnings Date [{lastEarnings.strftime('%x')}]")
+
         chartBuf = self._buffer(fig)
         if progress: progress("Finalizing Image...")
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict").image(chartBuf)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf)
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
