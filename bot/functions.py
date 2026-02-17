@@ -743,7 +743,7 @@ class Charts:
         history = history.copy()
         history["x_index"] = np.arange(len(history))
         
-        up = history[history.Close >= history.Open]
+        up = history[history.Close >= history.Open] 
         down = history[history.Close < history.Open]
         width = 0.6
         width2 = 0.08 
