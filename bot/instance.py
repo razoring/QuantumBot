@@ -11,8 +11,6 @@ _intents = discord.Intents.default()
 _intents.message_content = True
 _intents.guilds = True
 _intents.invites = True
-_intents.members = True
-_intents.presences = True
 
 class QuantumBot(commands.Bot):
     def __init__(self):
@@ -31,10 +29,8 @@ class QuantumBot(commands.Bot):
 
     @tasks.loop(minutes=30)
     async def _updateStatus(self):
-        totalActive = 0
-        for guild in self.guilds:
-            totalActive += sum(1 for m in guild.members if m.status != discord.Status.offline)
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{totalActive} active users"))
+        totalUsers = sum(g.member_count for g in self.guilds)
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{totalUsers} users"))
 
 bot = QuantumBot()
 

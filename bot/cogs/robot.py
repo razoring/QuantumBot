@@ -140,6 +140,8 @@ class Robot(commands.Cog):
             return False
 
     @app_commands.command(name="help", description="List all commands, and additional information")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     async def help(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(ephemeral=True)
@@ -154,6 +156,8 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)")
     async def quote(self, interaction: discord.Interaction, ticker: str):
         try:
@@ -177,6 +181,8 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.describe(ticker="The ticker symbol to return (ex. AAPL)", duration="Time range of data to display on the graph", interval="How much to zoom in for the range of data")
     @app_commands.choices(duration=[
         app_commands.Choice(name="Past 24 Hours (1d)", value="1d"),
@@ -218,8 +224,15 @@ class Robot(commands.Cog):
             update = Update(ticker=ticker)
             embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
             
-            invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-            icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+            if interaction.guild:
+                invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+                icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+                serverName = interaction.guild.name
+                inviteUrl = invite.url
+            else:
+                icon = "bot/assets/icon.png"
+                serverName = "Direct Message"
+                inviteUrl = "IN DEVELOPMENT"
 
             loading = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
             loading.description = "Starting..."
@@ -239,7 +252,7 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, interaction.guild.name, invite.url, icon, static, progress)
+            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, serverName, inviteUrl, icon, static, progress)
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
@@ -261,6 +274,8 @@ class Robot(commands.Cog):
         pass
     
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")
     @app_commands.choices(model=[
         app_commands.Choice(name=models[0], value="0"),
@@ -283,8 +298,15 @@ class Robot(commands.Cog):
             selectedModel = int(model.value) if model else 2
             warning = False
 
-            invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-            icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+            if interaction.guild:
+                invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+                icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+                serverName = interaction.guild.name
+                inviteUrl = invite.url
+            else:
+                icon = "bot/assets/icon.png"
+                serverName = "Direct Message"
+                inviteUrl = "IN BETA"
 
             loading = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
             loading.description = "Starting Thread..."
@@ -304,12 +326,12 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.project, ticker, selectedModel, interaction.guild.name, invite.url, icon, progress_cb)
-
+            img = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, progress_cb)
+            
             if img is None:
                 warning = True
                 progress_cb("Using Extrapolation Model...")
-                img = await asyncio.to_thread(charts.project, ticker, 1, interaction.guild.name, invite.url, icon, progress_cb)
+                img = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, progress_cb)
 
             if img:
                 progress_cb("Finalizing/Cleaning...")
@@ -329,6 +351,8 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query (stock, index, etf, general search)")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.describe(query="The input to validate")
     async def tickers(self, interaction: discord.Interaction, query:str):
         try:
@@ -342,6 +366,8 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
     async def me(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -506,15 +532,15 @@ class Feedback(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
         await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}.```", ephemeral=True)
 
-    @discord.ui.button(label="Realistic", style=discord.ButtonStyle.gray, custom_id="LikeButton")
+    @discord.ui.button(label="👍", style=discord.ButtonStyle.gray, custom_id="LikeButton")
     async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self.feedback(interaction, "Realistic")
+        await self.feedback(interaction, "👍")
 
-    @discord.ui.button(label="Unrealistic", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
+    @discord.ui.button(label="👎", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
-        await self.feedback(interaction, "Unrealistic")
+        await self.feedback(interaction, "👎")
 
 # mount bot - DO NOT TOUCH
 async def setup(bot): await bot.add_cog(Robot(bot))

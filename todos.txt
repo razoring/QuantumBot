@@ -7,7 +7,6 @@ Fix aiohttp.client_exceptions.ClientOSError: [Errno 1] [SSL: SSLV3_ALERT_BAD_REC
 
 TBD SOON:
 Polymarket data
-DM usage capabilities
 Implementation of the AI
 More in-depth telemetry
     Error telemetry
@@ -29,6 +28,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+DM usage capabilities
 FIXED PREDICTION ALGORITHM
 BETTER Considerations
 User counts!
