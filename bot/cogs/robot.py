@@ -150,7 +150,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="quote", description="Provide latest quote of a given ticker only")
@@ -173,7 +173,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
@@ -252,7 +252,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
@@ -325,7 +325,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tickers", description="Check/find the exact ticker for a given query (stock, index, etf, general search)")
@@ -338,7 +338,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="me", description="Display account information (hidden from others)")
@@ -353,7 +353,7 @@ class Robot(commands.Cog):
         except Exception as e:
             traceback.print_exc()
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
-            embed.description = "Sorry, An error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
+            embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
 class RegisterPrompt(discord.ui.View):
@@ -462,7 +462,7 @@ class RegisterModal(discord.ui.Modal, title="Register"):
                 if fut and not fut.done():
                     fut.set_result(False)
                 embed = discord.Embed(color=discord.Colour.teal(), title="500: Registration Failed")
-                embed.description = "An error occurred while creating your account. Please try again later."
+                embed.description = "an error occurred while creating your account. Please try again later."
                 await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
             if fut and not fut.done():

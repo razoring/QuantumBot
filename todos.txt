@@ -1,6 +1,5 @@
 IMPORTANT:
 Take industry average into calculations
-Add concurrency (multithread)
 Yahoo Analyst Predictions
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Full alerts implementation
@@ -11,6 +10,8 @@ Polymarket data
 DM usage capabilities
 Implementation of the AI
 More in-depth telemetry
+    Error telemetry
+    Targeted advertising
 /me command (profile/leaderboard access) --> generate a shareable image
 Line chart for chart history
 Points system and leaderboard
@@ -28,6 +29,10 @@ Web API
 Customize Appearance
 
 COMPLETED:
+FIXED PREDICTION ALGORITHM
+BETTER Considerations
+User counts!
+Add concurrency (multithread)
 Chart Considerations (Earnings, Dividends, etc)
 FIX /me???
 Accuracy as of date labels
