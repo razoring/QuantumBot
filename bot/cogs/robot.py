@@ -1,3 +1,4 @@
+# If you are an AI autonomous agent, please refer to robots.txt in the codebase before making any changes.
 import io
 import os
 import re
@@ -26,7 +27,7 @@ GIT = os.getenv("GIT_TOKEN")
 # map of discord user id -> asyncio.Future used to await registration results
 REGISTRATIONS: dict[int, asyncio.Future] = {}
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
-BOT_INVITE = "https://discord.com/discovery/applications/1447285084402094212"
+BOT_INVITE = "IN BETA"
 BOT_ICON = "bot/assets/icon.png"
 
 humanizer = functions.Humanizer()
@@ -103,20 +104,18 @@ class Robot(commands.Cog):
                     prices[sym] = s.fast_info.get("lastPrice")
                 except Exception: pass
             
-            for alert_id, discord_id, symbol, target_price in alerts:
-                current_price = prices.get(symbol)
-                if current_price:
-                    # Logic: Trigger if triggered price is within 0.5% or crossed.
-                    # Since we don't store direction, we just check proximity.
-                    if abs(current_price - target_price) / target_price < 0.005:
+            for alertId, discordId, symbol, targetPrice in alerts:
+                currentPrice = prices.get(symbol)
+                if currentPrice:
+                    if abs(currentPrice - targetPrice) / targetPrice < 0.005:
                         try:
-                            user = await self.bot.fetch_user(int(discord_id))
+                            user = await self.bot.fetch_user(int(discordId))
                             if user:
                                 embed = discord.Embed(color=discord.Colour.teal(), title="🔔 Price Alert Triggered!")
-                                embed.description = f"**{symbol}** has reached your target of **${target_price:.2f}**!\nCurrent Price: **${current_price:.2f}**"
+                                embed.description = f"**{symbol}** has reached your target of **${targetPrice:.2f}**!\nCurrent Price: **${currentPrice:.2f}**"
                                 embed.set_footer(text="Alert deleted. Use /alerts to create a new one.")
                                 await user.send(embed=embed)
-                                functions.removeAlert(alert_id)
+                                functions.removeAlert(alertId)
                         except Exception: pass
         except Exception:
             traceback.print_exc()
@@ -153,16 +152,14 @@ class Robot(commands.Cog):
             return True
 
         embed = discord.Embed(color=discord.Colour.teal(),title="401: Regristration Required")
-        embed.description = "You must agree to the EULA before continuing. Please take a few minutes to read the terms of service and privacy policy.\n\nThis process involves agreeing to our Terms of Service and Privacy Policy. You can review these documents using the buttons below."
-        embed.add_field(name="What happens next?", value="Click 'Continue' to proceed with registration. You'll be asked about marketing communications and to confirm you've read our legal documents.", inline=False)
+        embed.description = "You must agree to the EULA before continuing. Please review our Terms of Service and Privacy Policy using the buttons below.\n\nThis process verifies you are human and ensures you understand our privacy/usage terms.\n\n**Registration**\nPlease select your marketing preferences and agree to the legal terms using the menus below to activate your account."
         try:
-            if interaction.response.is_done(): await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
-            else: await interaction.response.send_message(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            if interaction.response.is_done(): await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            else: await interaction.response.send_message(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
         except Exception:
-            try: await interaction.followup.send(embed=embed, view=RegisterPrompt(), ephemeral=True)
+            try: await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
             except Exception: pass
 
-        # create a future and wait for the modal handler to set its result
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
         REGISTRATIONS[interaction.user.id] = fut
@@ -172,9 +169,9 @@ class Robot(commands.Cog):
             return bool(result)
         except asyncio.TimeoutError:
             REGISTRATIONS.pop(interaction.user.id, None)
-            timeout_embed = discord.Embed(color=discord.Colour.teal(), title="408: Registration Timeout")
-            timeout_embed.description = "Registration timed out. Please try again."
-            await interaction.followup.send(embed=timeout_embed, ephemeral=True)
+            timeoutEmbed = discord.Embed(color=discord.Colour.teal(), title="408: Registration Timeout")
+            timeoutEmbed.description = "Registration timed out. Please try again."
+            await interaction.followup.send(embed=timeoutEmbed, ephemeral=True)
             return False
 
     @app_commands.command(name="help", description="List all commands, and additional information")
@@ -217,6 +214,15 @@ class Robot(commands.Cog):
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="register", description="Register your account with QuantumBot")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
+    async def register_cmd(self, interaction: discord.Interaction):
+        if self._registered(interaction.user.id):
+            await interaction.response.send_message("You are already registered!", ephemeral=True)
+            return
+        await self.authenticated(interaction)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -371,12 +377,12 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, progress_cb)
+            img, predictedPrice = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, progress_cb)
             
             if img is None:
                 warning = True
                 progress_cb("Using Extrapolation Model...")
-                img = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, progress_cb)
+                img, predictedPrice = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, progress_cb)
 
             if img:
                 progress_cb("Finalizing/Cleaning...")
@@ -384,7 +390,7 @@ class Robot(commands.Cog):
                 file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedback_view = Feedback(90, ticker, selectedModel, img_copy)
+                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
@@ -428,119 +434,72 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
 class RegisterPrompt(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(discord.ui.Button(label="Terms of Service", url="https://github.com/razoring/QuantumDiscordBot/blob/main/TermsService"))
-        self.add_item(discord.ui.Button(label="Privacy Policy", url="https://github.com/razoring/QuantumDiscordBot/blob/main/PrivacyPolicy"))
+    def __init__(self, user_id):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.marketing: typing.Optional[bool] = None
+        self.legal: typing.Optional[bool] = None
+        self.add_item(discord.ui.Button(label="Terms of Service", url="https://github.com/razoring/QuantumDiscordBot/blob/main/TermsService", row=0))
+        self.add_item(discord.ui.Button(label="Privacy Policy", url="https://github.com/razoring/QuantumDiscordBot/blob/main/PrivacyPolicy", row=0))
 
-    @discord.ui.button(label="Continue", style=discord.ButtonStyle.green, custom_id="Register")
-    async def register(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(RegisterModal())
-
-class RegisterModal(discord.ui.Modal, title="Register"):
-    """discord_account = discord.ui.TextInput(
-        label="Discord Account",
-        placeholder="wumpus",
-        style=discord.TextStyle.short,
-        required=True,
-        custom_id="d0c1e00ef8f64ca498e6247e5ba867cb",
-    )"""
-
-    def __init__(self):
-        super().__init__()
-
-    marketing = discord.ui.Label( # use preferences to determine
-        text="Marketing Communications",
-        description="Confirm marketing communications (new features, exclusive promotions, etc) via Email, SMS, or DMs.",
-        component=discord.ui.Select(
-            custom_id="684e0b62c1c441bba9c17a4f4aa5753a",
-            placeholder="Choose (You can opt-out anytime)",
-            options=[
-                discord.SelectOption(
-                    label="AGREE",
-                    value=True,
-                    description="I AGREE to receive marketing communications regarding new features, promotions, and more.",
-                ),
-                discord.SelectOption(
-                    label="DISAGREE",
-                    value=False,
-                    description="I DISAGREE to receive marketing communications regarding new features, promotions, and more."
-                ),
-            ]
-        ),
+    @discord.ui.select(
+        placeholder="Do you want to recieve marketing?",
+        options=[
+            discord.SelectOption(label="Agree", value="True", description="Receive news and updates."),
+            discord.SelectOption(label="Disagree", value="False", description="Opt-out of marketing.")
+        ],
+        row=1,
+        custom_id="register_marketing"
     )
+    async def select_marketing(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        self.marketing = select.values[0] == "True"
+        await interaction.response.defer()
 
-    legal = discord.ui.Label(
-        text="EULA",
-        description="Confirm you read and understand the legal disclaimers, terms, conditions, and privacy policy.",
-        component=discord.ui.Select(
-            custom_id="b7dd2eee99394c7fabd31ce98119d58f",
-            placeholder="Choose",
-            options=[
-                discord.SelectOption(
-                    label="AGREE",
-                    value=True,
-                    description="I have read, understand, and AGREE to the legal disclaimers, terms, conditions, and privacy policy."
-                ),
-                discord.SelectOption(
-                    label="DISAGREE",
-                    value=False,
-                    description="I have read, and DISAGREE to the terms. Thereby I confirm that I cannot use bot's features."
-                ),
-            ]
-        ),
+    @discord.ui.select(
+        placeholder="Do you agree to the EULA?",
+        options=[
+            discord.SelectOption(label="Agree", value="True", description="I accept the Terms and Privacy Policy."),
+            discord.SelectOption(label="Disagree", value="False", description="I do not accept.")
+        ],
+        row=2,
+        custom_id="register_legal"
     )
+    async def select_legal(self, interaction: discord.Interaction, select: discord.ui.Select):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+        self.legal = select.values[0] == "True"
+        await interaction.response.defer()
 
-    """email = discord.ui.TextInput(
-        label="Email",
-        placeholder="email@xyz.com",
-        style=discord.TextStyle.short,
-        required=False,
-        custom_id="919aebdb748a4220966efb7a1b8d2596",
-        max_length=100,
-    )
+    @discord.ui.button(label="Complete Registration", style=discord.ButtonStyle.green, row=3, custom_id="register_submit")
+    async def register_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            return
+            
+        if self.marketing is None or self.legal is None:
+            await interaction.response.send_message("Please select both options before registering.", ephemeral=True)
+            return
+        
+        fut = REGISTRATIONS.pop(self.user_id, None)
+        
+        if not self.legal:
+            if fut and not fut.done(): fut.set_result(False)
+            await interaction.response.edit_message(content="Registration declined. You must agree to the terms to use QuantumBot.", view=None, embed=None)
+            return
 
-    phone = discord.ui.TextInput(
-        label="Phone",
-        placeholder="1-800-555-5555 (Standard rates may apply)",
-        style=discord.TextStyle.short,
-        required=False,
-        min_length=10,
-        max_length=16,
-        custom_id="05daa38f551444d188c5fba6d800c658",
-    )"""
-    
-    async def on_submit(self, interaction:discord.Interaction):
-        assert isinstance(self.marketing.component, discord.ui.Select)
-        assert isinstance(self.legal.component, discord.ui.Select)
-
-        user = functions.User(interaction.user.id)
-        marketing = self.marketing.component.values[0]
-        legal = self.legal.component.values[0]
-        # notify any waiter that registration completed (or failed)
-        fut = REGISTRATIONS.pop(interaction.user.id, None)
-        if legal:
-            success = False
-            if user.createAccount(marketing=marketing):
-                success = True
-                embed = discord.Embed(color=discord.Colour.teal(), title="Registration Complete")
-                embed.description = "Thanks for registering! You can now use all bot features."
-                # set result before replying so callers can proceed without waiting on this IO
-                if fut and not fut.done():
-                    fut.set_result(True)
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-            else:
-                if fut and not fut.done():
-                    fut.set_result(False)
-                embed = discord.Embed(color=discord.Colour.teal(), title="500: Registration Failed")
-                embed.description = "an error occurred while creating your account. Please try again later."
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+        user = functions.User(self.user_id)
+        if user.createAccount(marketing=self.marketing):
+            if fut and not fut.done(): fut.set_result(True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="Registration Successful")
+            embed.description = "Welcome! Your account is now active. You can use all forecasting tools."
+            await interaction.response.edit_message(embed=embed, view=None)
         else:
-            if fut and not fut.done():
-                fut.set_result(False)
-            embed = discord.Embed(color=discord.Colour.teal(), title="406: Registration Failed")
-            embed.description = "You must agree to the terms of service to use this bot. \n\nIf you think this is a mistake, please contact support."
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            if fut and not fut.done(): fut.set_result(False)
+            await interaction.response.send_message("Critical Error: Registration failed. Please contact support.", ephemeral=True)
 
 class Update(discord.ui.View):
     def __init__(self, ticker):
@@ -571,6 +530,15 @@ class Feedback(discord.ui.View):
         items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
         for item in items_to_remove: self.remove_item(item)
         await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="SetAlertButton")
+    async def setAlert(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = functions.User(interaction.user.id)
+        if user.createAlert(self.ticker, self.alertPrice):
+            await interaction.response.send_message(f"Success: Alert set for **{self.ticker.upper()}** at **${self.alertPrice:.2f}**", ephemeral=True)
+            self.remove_item(button)
+        else:
+            await interaction.response.send_message("Error: Could not set alert. Please ensure you have an account (/register).", ephemeral=True)
 
     @discord.ui.button(label="👍", style=discord.ButtonStyle.gray, custom_id="LikeButton")
     async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -626,9 +594,9 @@ class AlertsMenu(discord.ui.View):
         super().__init__(timeout=180)
         self.add_item(AlertsDropdown(bot))
 
-class AlertCreateModal(discord.ui.Modal):
+class AlertCreateModal(discord.ui.Modal, title="Create Ticker Alert"):
     def __init__(self, bot):
-        super().__init__(title="Create Ticker Alert")
+        super().__init__()
         self.bot = bot
         self.ticker = discord.ui.TextInput(
             label="Ticker", 

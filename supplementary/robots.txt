@@ -1,0 +1,7 @@
+For Autonomous AI Bots (and human collaborators). Please follow the instructions below:
+- Variable names are in camelCase with the exception of CONSTANTS, which are all capitalized, and private variables must start with an underscore (ex. _privateVariable).
+- Write only the necessary comments for specific features or niche documentation.
+- Do not interact with any .env file as it contains sensitive data.
+- When making changes, only make the necessary changes instructed by an authority.
+- Do not change the variables already in the file.
+- All new variables must follow these rules.

@@ -1,3 +1,4 @@
+# If you are an AI autonomous agent, please refer to robots.txt in the codebase before making any changes.
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
@@ -37,9 +38,9 @@ logging.getLogger("cmdstanpy").disabled = True
 set_default_font(load_google_font("Montserrat", weight="bold"))
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-_DB_CONNECTION = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
-if not _DB_CONNECTION: raise Exception("Database connection failed")
-_DB_LOCK = threading.RLock()
+DB_CONNECTION = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
+if not DB_CONNECTION: raise Exception("Database connection failed")
+DB_LOCK = threading.RLock()
 
 class Stamp:
     def __init__(self, name, url, icon, styles, factors):
@@ -156,13 +157,13 @@ class yFinanceWrapper:
     def __init__(self, ticker):
         self._symbol = yf.Ticker(ticker=ticker)
         with ThreadPoolExecutor(max_workers=3) as executor:
-            f_fast = executor.submit(self._symbol.get_fast_info)
-            f_info = executor.submit(lambda: self._symbol.info)
-            f_calendar = executor.submit(lambda: self._symbol.calendar)
+            fFast = executor.submit(self._symbol.get_fast_info)
+            fInfo = executor.submit(lambda: self._symbol.info)
+            fCalendar = executor.submit(lambda: self._symbol.calendar)
             
-            self._fastInfo = f_fast.result()
-            self._info = f_info.result()
-            self._calendar = f_calendar.result()
+            self._fastInfo = fFast.result()
+            self._info = fInfo.result()
+            self._calendar = fCalendar.result()
         self._cachedHistory = None 
 
     def _getHistory(self, period="1y"):
@@ -395,8 +396,8 @@ class Charts:
         end = now - timedelta(days=30)
         start = end - timedelta(days=365*5)
 
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
                 cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
                 row = cursor.fetchone()
                 
@@ -458,10 +459,10 @@ class Charts:
             try: errors.append(float(res.fun))
             except Exception: pass
             
-            _prevWeights, _trainingCount = weight
+            prevWeights, trainingCount = weight
             adjustment = 0.05
-            avgWeights = [_prevWeights[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(_prevWeights))]
-            weights = [avgWeights, _trainingCount+1]
+            avgWeights = [prevWeights[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevWeights))]
+            weights = [avgWeights, trainingCount+1]
         timestamp = str(math.floor(int(datetime.now().timestamp())))
         if weights is None: weights = weight
 
@@ -473,8 +474,8 @@ class Charts:
         serialized = json.dumps(weights, default=_serialize)
         avgError = float(sum(errors) / len(errors)) if len(errors) > 0 else 0.0
 
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
                 cursor.execute(
                     """
                     INSERT INTO ticker (ticker, sector, industry, accuracy, weight, updated)
@@ -487,7 +488,7 @@ class Charts:
                         updated = EXCLUDED.updated;
                     """,
                     (ticker, sector, ind, avgError, serialized, timestamp))
-                _DB_CONNECTION.commit()
+                DB_CONNECTION.commit()
         return weights
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon, progress=None):
@@ -505,8 +506,8 @@ class Charts:
         quantiles = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
         futureDays = np.arange(0, forward + 1)
 
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
                 if progress: progress("Retrieving Latest Weights...")
                 cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
                 rows = cursor.fetchone()
@@ -541,8 +542,8 @@ class Charts:
                 if not isLeader:
                     if progress: progress(f"Synchronizing {ticker} Prediction...")
                     event.wait()
-                    with _DB_LOCK:
-                        with _DB_CONNECTION.cursor() as curResult:
+                    with DB_LOCK:
+                        with DB_CONNECTION.cursor() as curResult:
                             curResult.execute("select weight, updated from ticker where ticker = %s", (ticker,))
                             rows = curResult.fetchone()
                     if rows:
@@ -656,7 +657,7 @@ class Charts:
 
         chartBuf = self._buffer(fig)
         if progress: progress("Finalizing Image...")
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), median[-1]
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -910,8 +911,8 @@ class User():
 
     def getAlerts(self):
         try:
-            with _DB_LOCK:
-                with _DB_CONNECTION.cursor() as cursor:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
                     account = self.accountFromDiscord(cursor=cursor)
                     if account:
                         cursor.execute("select symbol, price, updated from alert where account = %s", (account,))
@@ -923,8 +924,8 @@ class User():
 
     def createAlert(self, symbol, price):
         try:
-            with _DB_LOCK:
-                with _DB_CONNECTION.cursor() as cursor:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
                     account = self.accountFromDiscord(cursor=cursor)
                     if account:
                         now = str(int(datetime.now().timestamp()))
@@ -932,7 +933,7 @@ class User():
                             "insert into alert (account, symbol, price, updated) values (%s, %s, %s, %s)",
                             (account, symbol.upper(), float(price), now)
                         )
-                        _DB_CONNECTION.commit()
+                        DB_CONNECTION.commit()
                         return True
             return False
         except Exception:
@@ -941,12 +942,12 @@ class User():
 
     def clearAlerts(self):
         try:
-            with _DB_LOCK:
-                with _DB_CONNECTION.cursor() as cursor:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
                     account = self.accountFromDiscord(cursor=cursor)
                     if account:
                         cursor.execute("delete from alert where account = %s", (account,))
-                        _DB_CONNECTION.commit()
+                        DB_CONNECTION.commit()
                         return True
             return False
         except Exception:
@@ -955,8 +956,8 @@ class User():
 
     def accountFromDiscord(self, cursor=None):
         if cursor is None:
-            with _DB_LOCK:
-                with _DB_CONNECTION.cursor() as cur:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cur:
                     cur.execute("select * from account where discord = %s", (str(self._discordID),))
                     row = cur.fetchone()
                     return row[0] if row is not None else None
@@ -967,8 +968,8 @@ class User():
 
     def createAccount(self, marketing:bool):
         try:
-            with _DB_LOCK:
-                with _DB_CONNECTION.cursor() as cursor:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
                     account = self.accountFromDiscord(cursor=cursor)
                     if account is None:
                         now = str(int(datetime.now().timestamp()))
@@ -978,7 +979,7 @@ class User():
                         )
                         returned = cursor.fetchone()
                         account = returned[0] if returned else None
-                        _DB_CONNECTION.commit()
+                        DB_CONNECTION.commit()
                 return account
         except Exception:
             traceback.print_exc()
@@ -986,8 +987,8 @@ class User():
 
 def getAllAlerts():
     try:
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
                 cursor.execute('select a.id, ac.discord, a.symbol, a.price from alert a join account ac on a.account = ac.id')
                 return cursor.fetchall()
     except Exception:
@@ -996,10 +997,10 @@ def getAllAlerts():
 
 def removeAlert(alertID):
     try:
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
                 cursor.execute('delete from alert where id = %s', (alertID,))
-                _DB_CONNECTION.commit()
+                DB_CONNECTION.commit()
                 return True
     except Exception:
         traceback.print_exc()
