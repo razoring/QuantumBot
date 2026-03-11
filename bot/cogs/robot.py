@@ -394,7 +394,7 @@ class Robot(commands.Cog):
                 file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy)
+                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy, serverName, inviteUrl, icon)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(file=file, embed=embed, view=feedback_view)
@@ -530,22 +530,84 @@ class Update(discord.ui.View):
         await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
 class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker, model, fileObject):
+    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon):
         super().__init__(timeout=300)
         self.alertPrice = alertPrice
         self.ticker = alertTicker
         self.model = model
         self.file = fileObject
+        self.serverName = serverName
+        self.serverInvite = serverInvite
+        self.serverIcon = serverIcon
+        self._updateLabels()
 
-    async def feedback(self, interaction: discord.Interaction, rating):
-        self.file.seek(0)
-        hook = DiscordWebhook(url=WEBHOOK, content=f"Rating: **{rating}**, Version: {getVersion()}, Ticker: {self.ticker}, Model: {self.model}, Timestamp: {datetime.datetime.now()}") 
-        hook.add_file(file=self.file, filename="output.png")
-        await asyncio.to_thread(hook.execute)
-        
-        items_to_remove = [child for child in self.children if isinstance(child, discord.ui.Button) and child.custom_id in ("LikeButton", "DislikeButton")]
-        for item in items_to_remove: self.remove_item(item)
-        await interaction.edit_original_response(view=self)
+    def _updateLabels(self):
+        likes, dislikes, _ = functions.getTickerFeedback(self.ticker)
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                if child.custom_id == "LikeButton":
+                    child.label = f"👍 {likes}" if likes > 0 else "👍"
+                elif child.custom_id == "DislikeButton":
+                    child.label = f"👎 {dislikes}" if dislikes > 0 else "👎"
+
+    async def feedbackSubmit(self, interaction: discord.Interaction, rating):
+        try:
+            await interaction.response.defer(ephemeral=True)
+            originalMessage = interaction.message
+
+            functions.recordPredictionFeedback(self.ticker, rating)
+            
+            if rating == "👎":
+                if originalMessage:
+                    await originalMessage.edit(view=None)
+
+                confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
+                voteType = "negative"
+                confirmEmbed.description = f"Your **{voteType}** feedback for **{self.ticker.upper()}** has been recorded. The prediction is being recalculated..."
+                await interaction.followup.send(embed=confirmEmbed, ephemeral=True)
+
+                charts = functions.Charts()
+                img, predictedPrice = await asyncio.to_thread(
+                    charts.project, 
+                    self.ticker, 
+                    self.model, 
+                    self.serverName, 
+                    self.serverInvite, 
+                    self.serverIcon
+                )
+                
+                if img:
+                    self.file = io.BytesIO(img.getvalue())
+                    self.alertPrice = predictedPrice
+
+                self._updateLabels()
+                
+                if originalMessage:
+                    self.file.seek(0)
+                    file = discord.File(self.file, filename="output.png")
+                    if len(originalMessage.embeds) > 0:
+                        embed = originalMessage.embeds[0]
+                        embed.set_image(url="attachment://output.png")
+                        await originalMessage.edit(attachments=[file], embed=embed, view=self)
+                    else:
+                        await originalMessage.edit(attachments=[file], view=self)
+            
+            else: # rating == "👍"
+                self._updateLabels()
+                if originalMessage:
+                    await originalMessage.edit(view=self)
+                
+                confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
+                voteType = "positive"
+                confirmEmbed.description = f"Your **{voteType}** feedback for **{self.ticker.upper()}** has been recorded. Thank you!"
+                await interaction.followup.send(embed=confirmEmbed, ephemeral=True)
+
+        except Exception:
+            traceback.print_exc()
+            try:
+                errorEmbed = discord.Embed(color=discord.Color.red(), title="Error", description="An error occurred while processing your feedback.")
+                await interaction.followup.send(embed=errorEmbed, ephemeral=True)
+            except: pass
 
     @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="SetAlertButton")
     async def setAlert(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -563,13 +625,63 @@ class Feedback(discord.ui.View):
 
     @discord.ui.button(label="👍", style=discord.ButtonStyle.gray, custom_id="LikeButton")
     async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await self.feedback(interaction, "👍")
+        await self.feedbackSubmit(interaction, "👍")
 
     @discord.ui.button(label="👎", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
-        await self.feedback(interaction, "👎")
+        await self.feedbackSubmit(interaction, "👎")
+
+    @discord.ui.button(label="Feedback", style=discord.ButtonStyle.gray, custom_id="DetailedFeedbackButton")
+    async def detailsButton(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(FeedbackModal(self.ticker, self.model, self.file))
+
+class FeedbackModal(discord.ui.Modal):
+    def __init__(self, ticker, model, fileObject):
+        super().__init__(title="Feedback", custom_id="modal")
+        self.ticker = ticker
+        self.model = model
+        self.file = fileObject
+
+        self.fileUpload = discord.ui.TextInput(
+            label="File Upload",
+            placeholder="Link to photo or screenshot...",
+            style=discord.TextStyle.short,
+            custom_id="4f0e86a466214dff9d1558d15809b696",
+            required=False
+        )
+        
+        self.descriptionInput = discord.ui.TextInput(
+            label="Description",
+            placeholder="Explain the issue, bug or inaccuracy with great detail. What caused it and how do you replicate it?",
+            style=discord.TextStyle.paragraph,
+            custom_id="5582e68567f84a29b9aff56131669417",
+            min_length=50,
+            required=True
+        )
+        
+        self.add_item(self.fileUpload)
+        self.add_item(self.descriptionInput)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        self.file.seek(0)
+        
+        content = (
+            f"**Detailed Feedback Received**\n"
+            f"Ticker: {self.ticker}\n"
+            f"Model: {self.model}\n"
+            f"Version: {getVersion()}\n"
+            f"Description: {self.descriptionInput.value}\n"
+            f"Attached Photo Link: {self.fileUpload.value if self.fileUpload.value else 'None'}"
+        )
+        
+        hook = DiscordWebhook(url=WEBHOOK, content=content)
+        hook.add_file(file=self.file.getvalue(), filename="prediction_chart.png")
+        await asyncio.to_thread(hook.execute)
+        
+        success_embed = discord.Embed(color=discord.Colour.teal(), title="Feedback Submitted")
+        success_embed.description = "Thank you for your detailed feedback! Our team will review it."
+        await interaction.followup.send(embed=success_embed, ephemeral=True)
 
 class AlertsDropdown(discord.ui.Select):
     def __init__(self, bot):

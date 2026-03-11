@@ -506,6 +506,7 @@ class Charts:
         quantiles = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
         futureDays = np.arange(0, forward + 1)
 
+        bias = None
         with DB_LOCK:
             with DB_CONNECTION.cursor() as cursor:
                 if progress: progress("Retrieving Latest Weights...")
@@ -518,9 +519,8 @@ class Charts:
             points = ivPoints if ivPoints is not None else []
         
         if model != 0:
-            bias = None
-            train = True
-            if rows is not None:
+            train = True if not bias else False
+            if not bias and rows is not None:
                 if len(json.dumps(rows)) > 1:
                     rows = self.clean(rows)
                     weight:list = rows[0]
@@ -529,7 +529,7 @@ class Charts:
                         if updated < 432000:
                             bias = weight
                             train = False
-            if train:
+            if train and not bias:
                 isLeader = False
                 with self._REGISTRY_LOCK:
                     if ticker not in self._TRAINING_REGISTRY:
@@ -1005,3 +1005,93 @@ def removeAlert(alertID):
     except Exception:
         traceback.print_exc()
         return False
+
+EPHEMERAL_FEEDBACK: dict[str, dict] = {}
+DISLIKE_STRENGTH = 0.25
+
+def getTickerFeedback(ticker: str):
+    ticker = ticker.upper()
+    likes, dislikes = 0, 0
+    if ticker in EPHEMERAL_FEEDBACK:
+        data = EPHEMERAL_FEEDBACK[ticker]
+        likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
+    
+    conf = 0.1
+    try:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
+                cursor.execute("SELECT confidence FROM ticker WHERE ticker = %s", (ticker,))
+                row = cursor.fetchone()
+                if row and row[0] is not None:
+                    conf = row[0]
+    except Exception: pass
+    
+    return likes, dislikes, conf
+
+def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = None):
+    ticker = ticker.upper()
+    
+    if ticker not in EPHEMERAL_FEEDBACK:
+        EPHEMERAL_FEEDBACK[ticker] = {"likes": 0, "dislikes": 0}
+    
+    if rating == "👍":
+        EPHEMERAL_FEEDBACK[ticker]["likes"] += 1
+    elif rating == "👎":
+        EPHEMERAL_FEEDBACK[ticker]["dislikes"] += 1
+
+    try:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
+                cursor.execute("SELECT weight, confidence FROM ticker WHERE ticker = %s", (ticker,))
+                row = cursor.fetchone()
+                
+                weights = currentWeights if currentWeights else [0.2, 0.2, 0.2, 0.2, 0.2]
+                conf = 0.1
+                trainingCount = 0
+
+                if row:
+                    weightsRaw = row[0]
+                    # Format preservation: [weights, count]
+                    if isinstance(weightsRaw, list):
+                        weights = weightsRaw[0]
+                        trainingCount = weightsRaw[1] if len(weightsRaw) > 1 else 0
+                    elif isinstance(weightsRaw, str):
+                        try:
+                            decoded = json.loads(weightsRaw)
+                            weights = decoded[0]
+                            trainingCount = decoded[1] if len(decoded) > 1 else 0
+                        except: pass
+                    
+                    if row[1] is not None:
+                        conf = row[1]
+
+                if rating == "👍":
+                    conf = max(0.0, conf - 0.01)
+                elif rating == "👎":
+                    conf = min(1.0, conf + DISLIKE_STRENGTH)
+                    randomTarget = np.random.rand(5)
+                    randomTarget /= randomTarget.sum()
+                    
+                    weights = [w * (1 - conf) + rt * conf for w, rt in zip(weights, randomTarget)]
+                    total = sum(weights)
+                    if total > 0: weights = [w / total for w in weights]
+
+                now = str(int(datetime.now().timestamp()))
+                serializedWeights = json.dumps([weights, trainingCount])
+                
+                cursor.execute(
+                    """
+                    INSERT INTO ticker (ticker, weight, confidence, updated)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (ticker) DO UPDATE SET
+                        weight = EXCLUDED.weight,
+                        confidence = EXCLUDED.confidence,
+                        updated = EXCLUDED.updated;
+                    """,
+                    (ticker, serializedWeights, conf, now)
+                )
+                DB_CONNECTION.commit()
+    except Exception:
+        traceback.print_exc()
+
+    return EPHEMERAL_FEEDBACK[ticker]["likes"], EPHEMERAL_FEEDBACK[ticker]["dislikes"]
