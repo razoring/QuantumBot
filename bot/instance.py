@@ -30,7 +30,7 @@ class QuantumBot(commands.Bot):
     @tasks.loop(minutes=30)
     async def _updateStatus(self):
         totalUsers = sum(g.member_count for g in self.guilds)
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{totalUsers} users"))
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{totalUsers} traders"))
 
 bot = QuantumBot()
 

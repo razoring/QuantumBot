@@ -111,8 +111,8 @@ class Robot(commands.Cog):
                         try:
                             user = await self.bot.fetch_user(int(discordId))
                             if user:
-                                embed = discord.Embed(color=discord.Colour.teal(), title="🔔 Price Alert Triggered!")
-                                embed.description = f"**{symbol}** has reached your target of **${targetPrice:.2f}**!\nCurrent Price: **${currentPrice:.2f}**"
+                                embed = discord.Embed(color=discord.Colour.teal(), title=f"{symbol} Price Alert")
+                                embed.description = f"**{symbol}** has reached your target of **${targetPrice:.2f}**!"
                                 embed.set_footer(text="Alert deleted. Use /alerts to create a new one.")
                                 await user.send(embed=embed)
                                 functions.removeAlert(alertId)
@@ -132,7 +132,10 @@ class Robot(commands.Cog):
         names = results["shortName"] if "shortName" in results else None
         sanity = query.upper() in [s.upper() for s in symbols]
         if boolean: return sanity
-        if results is None or results.empty or results.index.empty: return discord.Embed(color=discord.Colour.teal(),title=f"No suggestions found. Please check your spelling.")
+        if results is None or results.empty or results.index.empty: 
+            embed = discord.Embed(color=discord.Colour.teal(), title="404: Not Found")
+            embed.description = f"No suggestions found for **{query}**. Please check your spelling."
+            return embed
 
         desc = ""
         embed = discord.Embed(color=discord.Colour.teal(),title=f"{header.strip()} {query.upper()}:")
@@ -151,13 +154,12 @@ class Robot(commands.Cog):
         if self._registered(interaction.user.id) and bypass==False:
             return True
 
-        embed = discord.Embed(color=discord.Colour.teal(),title="401: Regristration Required")
-        embed.description = "You must agree to the EULA before continuing. Please review our Terms of Service and Privacy Policy using the buttons below.\n\nThis process verifies you are human and ensures you understand our privacy/usage terms.\n\n**Registration**\nPlease select your marketing preferences and agree to the legal terms using the menus below to activate your account."
+        error = "## Getting Started\n**You must have a registered account before accessing our services.**\nPlease take a few minutes to read our Terms of Service and Privacy Policy.\nYou can review these documents using the buttons below.\n\nMake a selection from the two menus presented:**\n1. Confirm marketing communication preferences.\n2. Confirm that you have read, understand, and agree to our EULA.**"
         try:
-            if interaction.response.is_done(): await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
-            else: await interaction.response.send_message(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            if interaction.response.is_done(): await interaction.followup.send(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            else: await interaction.response.send_message(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
         except Exception:
-            try: await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            try: await interaction.followup.send(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
             except Exception: pass
 
         loop = asyncio.get_running_loop()
@@ -174,6 +176,15 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=timeoutEmbed, ephemeral=True)
             return False
 
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        traceback.print_exc()
+        embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
+        embed.description = "An unexpected error occurred. Please try again later."
+        try:
+            if interaction.response.is_done(): await interaction.followup.send(embed=embed, ephemeral=True)
+            else: await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception: pass
+
     @app_commands.command(name="help", description="List all commands, and additional information")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
@@ -186,7 +197,7 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed)
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -208,21 +219,12 @@ class Robot(commands.Cog):
             
             update = Update(ticker=ticker)
             embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
-            await interaction.followup.send(f"Here is the current data {interaction.user.mention}:", embed=embed, view=update)
+            await interaction.followup.send(embed=embed, view=update)
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="register", description="Register your account with QuantumBot")
-    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
-    @app_commands.allowed_installs(guilds=True, users=True)
-    async def register_cmd(self, interaction: discord.Interaction):
-        if self._registered(interaction.user.id):
-            await interaction.response.send_message("You are already registered!", ephemeral=True)
-            return
-        await self.authenticated(interaction)
 
     @app_commands.command(name="chart", description="Provide latest chart and quote of a given ticker")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -300,7 +302,7 @@ class Robot(commands.Cog):
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
-                await interaction.followup.send(f"Here is today's charts {interaction.user.mention}:", file=file, embed=embed, view=update, ephemeral=False)
+                await interaction.followup.send(file=file, embed=embed, view=update, ephemeral=False)
                 await status.delete()
         except AssertionError as e:
             embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
@@ -308,7 +310,7 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -322,7 +324,9 @@ class Robot(commands.Cog):
             await interaction.response.send_message("## Alerts Menu\nChoose an action below to manage your ticker alerts.", view=view, ephemeral=True)
         except Exception:
             traceback.print_exc()
-            await interaction.response.send_message("Sorry, an error occurred while opening the alerts menu.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
+            embed.description = "Sorry, an error occurred while opening the alerts menu."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
     
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -393,11 +397,11 @@ class Robot(commands.Cog):
                 feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
-                await interaction.followup.send(f"Here is today's predictions ({models[int(selectedModel if not warning else 1)]} Model) {interaction.user.mention}:", file=file, embed=embed, view=feedback_view)
+                await interaction.followup.send(file=file, embed=embed, view=feedback_view)
                 await status.delete()
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -412,14 +416,14 @@ class Robot(commands.Cog):
             await interaction.followup.send(embed=self.lookup(query=query))
         except Exception as e:
             traceback.print_exc()
-            embed = discord.Embed(color=discord.Colour.teal(), title="500: Unknown Server Error")
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="me", description="Display account information (hidden from others)")
+    @app_commands.command(name="account", description="Display account information (hidden from others)")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    async def me(self, interaction: discord.Interaction):
+    async def account(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
@@ -443,33 +447,37 @@ class RegisterPrompt(discord.ui.View):
         self.add_item(discord.ui.Button(label="Privacy Policy", url="https://github.com/razoring/QuantumDiscordBot/blob/main/PrivacyPolicy", row=0))
 
     @discord.ui.select(
-        placeholder="Do you want to recieve marketing?",
+        placeholder="Confirm your marketing preferences.",
         options=[
-            discord.SelectOption(label="Agree", value="True", description="Receive news and updates."),
-            discord.SelectOption(label="Disagree", value="False", description="Opt-out of marketing.")
+            discord.SelectOption(label="AGREE", value="True", description="I AGREE to receive marketing communications regarding new features, promotions, and more."),
+            discord.SelectOption(label="DISAGREE", value="False", description="I DISAGREE to receive marketing communications regarding new features, promotions, and more.")
         ],
         row=1,
         custom_id="register_marketing"
     )
     async def select_marketing(self, interaction: discord.Interaction, select: discord.ui.Select):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="403: Forbidden")
+            embed.description = "This menu is not for you."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         self.marketing = select.values[0] == "True"
         await interaction.response.defer()
 
     @discord.ui.select(
-        placeholder="Do you agree to the EULA?",
+        placeholder="Confirm you read and understand the EULA.",
         options=[
-            discord.SelectOption(label="Agree", value="True", description="I accept the Terms and Privacy Policy."),
-            discord.SelectOption(label="Disagree", value="False", description="I do not accept.")
+            discord.SelectOption(label="AGREE", value="True", description="I have read, understand, and AGREE to the legal disclaimers, terms, conditions, and privacy policy."),
+            discord.SelectOption(label="DISAGREE", value="False", description="I have read, and DISAGREE to the terms. Thereby I confirm that I cannot use bot's features.")
         ],
         row=2,
         custom_id="register_legal"
     )
     async def select_legal(self, interaction: discord.Interaction, select: discord.ui.Select):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="403: Forbidden")
+            embed.description = "This menu is not for you."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         self.legal = select.values[0] == "True"
         await interaction.response.defer()
@@ -477,18 +485,24 @@ class RegisterPrompt(discord.ui.View):
     @discord.ui.button(label="Complete Registration", style=discord.ButtonStyle.green, row=3, custom_id="register_submit")
     async def register_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This menu is not for you.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="403: Forbidden")
+            embed.description = "This menu is not for you."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
             
         if self.marketing is None or self.legal is None:
-            await interaction.response.send_message("Please select both options before registering.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+            embed.description = "You must make both selections."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         
         fut = REGISTRATIONS.pop(self.user_id, None)
         
         if not self.legal:
             if fut and not fut.done(): fut.set_result(False)
-            await interaction.response.edit_message(content="Registration declined. You must agree to the terms to use QuantumBot.", view=None, embed=None)
+            embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+            embed.description = "Registration declined. You must agree to the terms to use QuantumBot."
+            await interaction.response.edit_message(embed=embed, view=None)
             return
 
         user = functions.User(self.user_id)
@@ -499,7 +513,9 @@ class RegisterPrompt(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=None)
         else:
             if fut and not fut.done(): fut.set_result(False)
-            await interaction.response.send_message("Critical Error: Registration failed. Please contact support.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
+            embed.description = "Critical Error: Registration failed. Please contact support."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class Update(discord.ui.View):
     def __init__(self, ticker):
@@ -535,10 +551,15 @@ class Feedback(discord.ui.View):
     async def setAlert(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = functions.User(interaction.user.id)
         if user.createAlert(self.ticker, self.alertPrice):
-            await interaction.response.send_message(f"Success: Alert set for **{self.ticker.upper()}** at **${self.alertPrice:.2f}**", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="Alert Set")
+            embed.description = f"Success: Alert set for **{self.ticker.upper()}** at **${self.alertPrice:.2f}**"
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             self.remove_item(button)
+            await interaction.edit_original_response(view=self)
         else:
-            await interaction.response.send_message("Error: Could not set alert. Please ensure you have an account (/register).", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+            embed.description = "Error: Could not set alert. Please ensure you have an account (/register)."
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @discord.ui.button(label="👍", style=discord.ButtonStyle.gray, custom_id="LikeButton")
     async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -553,11 +574,11 @@ class Feedback(discord.ui.View):
 class AlertsDropdown(discord.ui.Select):
     def __init__(self, bot):
         options = [
-            discord.SelectOption(label="Create Ticker Alert", value="20a81ebd5d074c38b7c7bbade008d082", description="Create a new alert at a specific price."),
+            discord.SelectOption(label="Create Ticker Alert", value="20a81ebd5d074c38b7c7bbade008d082", description="Create a new alert at a specific price. You will enter the required information in a further menu."),
             # discord.SelectOption(label="Create Volatility Alert", value="55966df684dc4405b04306ee462db149", description="Daily/weekly/monthly closing alerts."),
             # discord.SelectOption(label="Create Market Hours Alert", value="90c3f353d7ba4f3296667dce62df6768", description="Market open/close notifications."),
-            discord.SelectOption(label="List Alerts", value="7e1f307aec2a4e63b04eefe00402faa6", description="Display all active ticker alerts."),
-            discord.SelectOption(label="Clear Alerts", value="ca0d8fe917d649039e9f9bc5e20c0fb2", description="Clear all alerts. Irreversible.")
+            discord.SelectOption(label="List Alerts", value="7e1f307aec2a4e63b04eefe00402faa6", description="Display all active ticker alerts. No further action necessary."),
+            discord.SelectOption(label="Clear Alerts", value="ca0d8fe917d649039e9f9bc5e20c0fb2", description="Clear all alerts. This action cannot be undone.")
         ]
         super().__init__(placeholder="Choose action", min_values=1, max_values=1, options=options, custom_id="b11fb05bbc12470ab2e9a76f3d1290a9")
         self.bot = bot
@@ -571,7 +592,9 @@ class AlertsDropdown(discord.ui.Select):
                 user = functions.User(interaction.user.id)
                 alerts = user.getAlerts()
                 if not alerts:
-                    await interaction.followup.send("You have no active alerts.", ephemeral=True)
+                    embed = discord.Embed(color=discord.Colour.teal(), title="No Alerts Found")
+                    embed.description = "You have no active alerts."
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
                     embed = discord.Embed(title="Your Active Alerts", color=discord.Color.teal())
                     desc = ""
@@ -583,9 +606,13 @@ class AlertsDropdown(discord.ui.Select):
                 await interaction.response.defer(ephemeral=True)
                 user = functions.User(interaction.user.id)
                 if user.clearAlerts():
-                    await interaction.followup.send("Success: All alerts have been cleared.", ephemeral=True)
+                    embed = discord.Embed(color=discord.Colour.teal(), title="Alerts Cleared")
+                    embed.description = "Success: All alerts have been cleared."
+                    await interaction.followup.send(embed=embed, ephemeral=True)
                 else:
-                    await interaction.followup.send("Error: Failed to clear alerts. Please ensure you have an account (!me).", ephemeral=True)
+                    embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+                    embed.description = "Error: Failed to clear alerts. Please ensure you have an account (!me)."
+                    await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception:
             traceback.print_exc()
 
@@ -624,17 +651,25 @@ class AlertCreateModal(discord.ui.Modal, title="Create Ticker Alert"):
             try:
                 price_val = float(price_str)
             except ValueError:
-                await interaction.followup.send("Error: Invalid price format. Please enter a positive number.", ephemeral=True)
+                embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+                embed.description = "Error: Invalid price format. Please enter a positive number."
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
             user = functions.User(interaction.user.id)
             if user.createAlert(ticker_val, price_val):
-                await interaction.followup.send(f"Success! I will notify you in DMs when **{ticker_val}** reaches **${price_val:.2f}**.", ephemeral=True)
+                embed = discord.Embed(color=discord.Colour.teal(), title="Alert Created")
+                embed.description = f"Success! You will be notify in DMs when **{ticker_val}** reaches **${price_val:.2f}**."
+                await interaction.followup.send(embed=embed, ephemeral=True)
             else:
-                await interaction.followup.send("Error: Failed to create alert. Please initialize your account with `/me` or try again.", ephemeral=True)
+                embed = discord.Embed(color=discord.Colour.teal(), title="400: Bad Request")
+                embed.description = "Error: Failed to create alert. Please initialize your account with `/me` or try again."
+                await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception:
             traceback.print_exc()
-            await interaction.followup.send("An unexpected error occurred while creating the alert.", ephemeral=True)
+            embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
+            embed.description = "An unexpected error occurred while creating the alert."
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 # mount bot - DO NOT TOUCH
 async def setup(bot): await bot.add_cog(Robot(bot))
