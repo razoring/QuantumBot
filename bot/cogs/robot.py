@@ -552,19 +552,20 @@ class Feedback(discord.ui.View):
 
     async def feedbackSubmit(self, interaction: discord.Interaction, rating):
         try:
-            await interaction.response.defer(ephemeral=True)
+            confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
+            voteType = "negative" if rating == "👎" else "positive"
+            confirmEmbed.description = f"Your **{voteType}** feedback for **{self.ticker.upper()}** has been recorded."
+            if rating == "👎":
+                confirmEmbed.description += " The prediction is being recalculated..."
+            
+            await interaction.response.send_message(embed=confirmEmbed, ephemeral=True)
             originalMessage = interaction.message
 
-            functions.recordPredictionFeedback(self.ticker, rating)
+            await asyncio.to_thread(functions.recordPredictionFeedback, self.ticker, rating)
             
             if rating == "👎":
                 if originalMessage:
                     await originalMessage.edit(view=None)
-
-                confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
-                voteType = "negative"
-                confirmEmbed.description = f"Your **{voteType}** feedback for **{self.ticker.upper()}** has been recorded. The prediction is being recalculated..."
-                await interaction.followup.send(embed=confirmEmbed, ephemeral=True)
 
                 charts = functions.Charts()
                 img, predictedPrice = await asyncio.to_thread(
@@ -596,11 +597,6 @@ class Feedback(discord.ui.View):
                 self._updateLabels()
                 if originalMessage:
                     await originalMessage.edit(view=self)
-                
-                confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
-                voteType = "positive"
-                confirmEmbed.description = f"Your **{voteType}** feedback for **{self.ticker.upper()}** has been recorded. Thank you!"
-                await interaction.followup.send(embed=confirmEmbed, ephemeral=True)
 
         except Exception:
             traceback.print_exc()
