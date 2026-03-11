@@ -1,4 +1,5 @@
 IMPORTANT:
+Implement Requests tracking (popularity, usage data)
 Take industry average into calculations
 Yahoo Analyst Predictions
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
