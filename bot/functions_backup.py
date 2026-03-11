@@ -1,4 +1,4 @@
-from collections import OrderedDict
+﻿from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import io
 import json
@@ -129,9 +129,9 @@ class Stamp:
 
             draw.text(xy=(2007, 58), text="Current Ticker Information:", font=self._font(16), fill=(112, 128, 144))
             if self._factors:
-                draw.text(xy=col1[0], text="• 52 Week High: %s\n• 52 Week Low: %s\n• Volume: %s\n• Average Volume: %s\n• Market Cap: %s"%(round(self._factors["get52wkHigh"],2),round(self._factors["get52wkLow"],2),Humanizer.suffix(self._factors["getVolume"]),Humanizer.suffix(self._factors["getAvgVolume"]),Humanizer.suffix(self._factors["getMktCap"])), font=self._font(16), fill='white')
-                draw.text(xy=col2[0], text=( "• P/E Ratio: {}\n" "• EPS Ratio: {}\n" "• Beta: {}\n" "• Annual Yield: {}%\n" "• Monthly Yield: {}%" ).format( round(self._factors["getPERatio"], 2), round(self._factors["getEPSRatio"], 2), round(self._factors["getBeta"], 2), round(self._factors["getAnnualYield"], 2), round(self._factors["getMonthlyYield"], 2)), font=self._font(16), fill='white')
-                draw.text(xy=col3[0], text = ( f"• Div. Amount: {self._factors['getDividendAmount']}\n" f"• Div. Change: {self._factors['getDividendChange']}\n" f"• Ex. Div. Date: {self._factors['getExDividendDate']}\n" f"• Pay Date: {self._factors['getPayDate']}" ), font=self._font(16), fill='white')
+                draw.text(xy=col1[0], text="â€¢ 52 Week High: %s\nâ€¢ 52 Week Low: %s\nâ€¢ Volume: %s\nâ€¢ Average Volume: %s\nâ€¢ Market Cap: %s"%(round(self._factors["get52wkHigh"],2),round(self._factors["get52wkLow"],2),Humanizer.suffix(self._factors["getVolume"]),Humanizer.suffix(self._factors["getAvgVolume"]),Humanizer.suffix(self._factors["getMktCap"])), font=self._font(16), fill='white')
+                draw.text(xy=col2[0], text=( "â€¢ P/E Ratio: {}\n" "â€¢ EPS Ratio: {}\n" "â€¢ Beta: {}\n" "â€¢ Annual Yield: {}%\n" "â€¢ Monthly Yield: {}%" ).format( round(self._factors["getPERatio"], 2), round(self._factors["getEPSRatio"], 2), round(self._factors["getBeta"], 2), round(self._factors["getAnnualYield"], 2), round(self._factors["getMonthlyYield"], 2)), font=self._font(16), fill='white')
+                draw.text(xy=col3[0], text = ( f"â€¢ Div. Amount: {self._factors['getDividendAmount']}\n" f"â€¢ Div. Change: {self._factors['getDividendChange']}\n" f"â€¢ Ex. Div. Date: {self._factors['getExDividendDate']}\n" f"â€¢ Pay Date: {self._factors['getPayDate']}" ), font=self._font(16), fill='white')
 
         buf = io.BytesIO()
         finalImg.save(buf, format="PNG")
@@ -983,24 +983,3 @@ class User():
         except Exception:
             traceback.print_exc()
             return None
-
-def getAllAlerts():
-    try:
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
-                cursor.execute('select a.id, ac.discord, a.symbol, a.price from alert a join account ac on a.account = ac.id')
-                return cursor.fetchall()
-    except Exception:
-        traceback.print_exc()
-        return []
-
-def removeAlert(alertID):
-    try:
-        with _DB_LOCK:
-            with _DB_CONNECTION.cursor() as cursor:
-                cursor.execute('delete from alert where id = %s', (alertID,))
-                _DB_CONNECTION.commit()
-                return True
-    except Exception:
-        traceback.print_exc()
-        return False

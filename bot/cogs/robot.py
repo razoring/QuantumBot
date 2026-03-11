@@ -9,7 +9,7 @@ from urllib.parse import urlparse as url
 
 import discord
 from discord import app_commands
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord_webhook import DiscordWebhook
 
 from github import Auth, Github
@@ -26,6 +26,8 @@ GIT = os.getenv("GIT_TOKEN")
 # map of discord user id -> asyncio.Future used to await registration results
 REGISTRATIONS: dict[int, asyncio.Future] = {}
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
+BOT_INVITE = "https://discord.com/discovery/applications/1447285084402094212"
+BOT_ICON = "bot/assets/icon.png"
 
 humanizer = functions.Humanizer()
 git = Github(auth=Auth.Token(GIT))
@@ -82,6 +84,42 @@ def infoEmbed(info: any, ticker: str, static: dict):
 class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.check_alerts.start()
+
+    def cog_unload(self):
+        self.check_alerts.cancel()
+
+    @tasks.loop(minutes=5)
+    async def check_alerts(self):
+        try:
+            alerts = functions.getAllAlerts()
+            if not alerts: return
+            
+            symbols = list(set(a[2] for a in alerts))
+            prices = {}
+            for sym in symbols:
+                try:
+                    s = yf.Ticker(sym)
+                    prices[sym] = s.fast_info.get("lastPrice")
+                except Exception: pass
+            
+            for alert_id, discord_id, symbol, target_price in alerts:
+                current_price = prices.get(symbol)
+                if current_price:
+                    # Logic: Trigger if triggered price is within 0.5% or crossed.
+                    # Since we don't store direction, we just check proximity.
+                    if abs(current_price - target_price) / target_price < 0.005:
+                        try:
+                            user = await self.bot.fetch_user(int(discord_id))
+                            if user:
+                                embed = discord.Embed(color=discord.Colour.teal(), title="🔔 Price Alert Triggered!")
+                                embed.description = f"**{symbol}** has reached your target of **${target_price:.2f}**!\nCurrent Price: **${current_price:.2f}**"
+                                embed.set_footer(text="Alert deleted. Use /alerts to create a new one.")
+                                await user.send(embed=embed)
+                                functions.removeAlert(alert_id)
+                        except Exception: pass
+        except Exception:
+            traceback.print_exc()
 
     @staticmethod
     def _registered(discordID):
@@ -226,13 +264,13 @@ class Robot(commands.Cog):
             
             if interaction.guild:
                 invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+                icon = interaction.guild.icon.url if interaction.guild.icon else BOT_ICON
                 serverName = interaction.guild.name
                 inviteUrl = invite.url
             else:
-                icon = "bot/assets/icon.png"
-                serverName = "Direct Message"
-                inviteUrl = "IN DEVELOPMENT"
+                icon = BOT_ICON
+                serverName = "QuantumBot"
+                inviteUrl = BOT_INVITE
 
             loading = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
             loading.description = "Starting..."
@@ -268,10 +306,17 @@ class Robot(commands.Cog):
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="alerts", description="Create/check/clear alerts for your given ticker")
-    @app_commands.describe(ticker="Ticker to create/delete alerts for")
-    async def alerts(self, interaction: discord.Interaction, ticker: typing.Optional[app_commands.Choice[str]]):
-        pass
+    @app_commands.command(name="alerts", description="Create/check/clear alerts")
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.allowed_installs(guilds=True, users=True)
+    async def alerts(self, interaction: discord.Interaction):
+        try:
+            if await self.authenticated(interaction=interaction, bypass=False) == False: return
+            view = AlertsMenu(self.bot)
+            await interaction.response.send_message("## Alerts Menu\nChoose an action below to manage your ticker alerts.", view=view, ephemeral=True)
+        except Exception:
+            traceback.print_exc()
+            await interaction.response.send_message("Sorry, an error occurred while opening the alerts menu.", ephemeral=True)
     
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
@@ -300,13 +345,13 @@ class Robot(commands.Cog):
 
             if interaction.guild:
                 invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else "bot/assets/placeholderIcon.jpg"
+                icon = interaction.guild.icon.url if interaction.guild.icon else BOT_ICON
                 serverName = interaction.guild.name
                 inviteUrl = invite.url
             else:
-                icon = "bot/assets/icon.png"
-                serverName = "Direct Message"
-                inviteUrl = "IN BETA"
+                icon = BOT_ICON
+                serverName = "QuantumBot"
+                inviteUrl = BOT_INVITE
 
             loading = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
             loading.description = "Starting Thread..."
@@ -527,11 +572,6 @@ class Feedback(discord.ui.View):
         for item in items_to_remove: self.remove_item(item)
         await interaction.edit_original_response(view=self)
 
-    @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="AlertButton")
-    async def alert(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-        await interaction.followup.send(f"```An alert has been set at ${self.alertPrice} for {self.ticker}.```", ephemeral=True)
-
     @discord.ui.button(label="👍", style=discord.ButtonStyle.gray, custom_id="LikeButton")
     async def likeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
@@ -541,6 +581,92 @@ class Feedback(discord.ui.View):
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
         await self.feedback(interaction, "👎")
+
+class AlertsDropdown(discord.ui.Select):
+    def __init__(self, bot):
+        options = [
+            discord.SelectOption(label="Create Ticker Alert", value="20a81ebd5d074c38b7c7bbade008d082", description="Create a new alert at a specific price."),
+            # discord.SelectOption(label="Create Volatility Alert", value="55966df684dc4405b04306ee462db149", description="Daily/weekly/monthly closing alerts."),
+            # discord.SelectOption(label="Create Market Hours Alert", value="90c3f353d7ba4f3296667dce62df6768", description="Market open/close notifications."),
+            discord.SelectOption(label="List Alerts", value="7e1f307aec2a4e63b04eefe00402faa6", description="Display all active ticker alerts."),
+            discord.SelectOption(label="Clear Alerts", value="ca0d8fe917d649039e9f9bc5e20c0fb2", description="Clear all alerts. Irreversible.")
+        ]
+        super().__init__(placeholder="Choose action", min_values=1, max_values=1, options=options, custom_id="b11fb05bbc12470ab2e9a76f3d1290a9")
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        try:
+            if self.values[0] == "20a81ebd5d074c38b7c7bbade008d082":
+                await interaction.response.send_modal(AlertCreateModal(self.bot))
+            elif self.values[0] == "7e1f307aec2a4e63b04eefe00402faa6":
+                await interaction.response.defer(ephemeral=True)
+                user = functions.User(interaction.user.id)
+                alerts = user.getAlerts()
+                if not alerts:
+                    await interaction.followup.send("You have no active alerts.", ephemeral=True)
+                else:
+                    embed = discord.Embed(title="Your Active Alerts", color=discord.Color.teal())
+                    desc = ""
+                    for sym, price, updated in alerts:
+                        desc += f"• **{sym}**: ${price:.2f} (Set: <t:{updated}:R>)\n"
+                    embed.description = desc
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+            elif self.values[0] == "ca0d8fe917d649039e9f9bc5e20c0fb2":
+                await interaction.response.defer(ephemeral=True)
+                user = functions.User(interaction.user.id)
+                if user.clearAlerts():
+                    await interaction.followup.send("Success: All alerts have been cleared.", ephemeral=True)
+                else:
+                    await interaction.followup.send("Error: Failed to clear alerts. Please ensure you have an account (!me).", ephemeral=True)
+        except Exception:
+            traceback.print_exc()
+
+class AlertsMenu(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=180)
+        self.add_item(AlertsDropdown(bot))
+
+class AlertCreateModal(discord.ui.Modal):
+    def __init__(self, bot):
+        super().__init__(title="Create Ticker Alert")
+        self.bot = bot
+        self.ticker = discord.ui.TextInput(
+            label="Ticker", 
+            placeholder="ex. AAPL", 
+            style=discord.TextStyle.short, 
+            custom_id="529799a9fe0b4d0c83a20fae114c5066",
+            required=True
+        )
+        self.price = discord.ui.TextInput(
+            label="Price", 
+            placeholder="149.99", 
+            style=discord.TextStyle.short, 
+            custom_id="76be0e8530124b39b508d9e44724b3d7",
+            required=True
+        )
+        self.add_item(self.ticker)
+        self.add_item(self.price)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+            ticker_val = self.ticker.value.strip().upper()
+            price_str = self.price.value.strip().replace("$", "")
+            
+            try:
+                price_val = float(price_str)
+            except ValueError:
+                await interaction.followup.send("Error: Invalid price format. Please enter a positive number.", ephemeral=True)
+                return
+
+            user = functions.User(interaction.user.id)
+            if user.createAlert(ticker_val, price_val):
+                await interaction.followup.send(f"Success! I will notify you in DMs when **{ticker_val}** reaches **${price_val:.2f}**.", ephemeral=True)
+            else:
+                await interaction.followup.send("Error: Failed to create alert. Please initialize your account with `/me` or try again.", ephemeral=True)
+        except Exception:
+            traceback.print_exc()
+            await interaction.followup.send("An unexpected error occurred while creating the alert.", ephemeral=True)
 
 # mount bot - DO NOT TOUCH
 async def setup(bot): await bot.add_cog(Robot(bot))
