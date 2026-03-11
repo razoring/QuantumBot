@@ -1,6 +1,4 @@
 IMPORTANT:
-Update text on buttons and registration, legal, etc.
-Fix the Alerts embeds
 Make rate buttons adjust model
     Make separate feedback button to send errors
 Take industry average into calculations
@@ -32,6 +30,8 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Update text on buttons and registration, legal, etc.
+Fix the Alerts embeds
 Full alerts implementation
 DM usage capabilities
 FIXED PREDICTION ALGORITHM
