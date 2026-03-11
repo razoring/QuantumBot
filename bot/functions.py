@@ -1007,7 +1007,7 @@ def removeAlert(alertID):
         return False
 
 EPHEMERAL_FEEDBACK: dict[str, dict] = {}
-DISLIKE_STRENGTH = 0.25
+DISLIKE_STRENGTH = 2
 
 def getTickerFeedback(ticker: str):
     ticker = ticker.upper()
