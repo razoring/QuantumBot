@@ -114,8 +114,8 @@ class Stamp:
         return rounded
 
     def image(self, chartPath, displayLegend=True):
-        mainTemplate = Image.open("bot/assets/template.png").convert("RGBA")
-        legendOverlay = Image.open("bot/assets/legend.png").convert("RGBA")
+        mainTemplate = Image.open("bot/assets/generation/template.png").convert("RGBA")
+        legendOverlay = Image.open("bot/assets/generation/legend.png").convert("RGBA")
         chartImg = Image.open(chartPath).resize((2400, 1200)).convert("RGBA")
 
         finalImg = Image.new(mode="RGB", size=(2500, 1500), color=(10, 19, 27))
@@ -130,7 +130,7 @@ class Stamp:
                 iconImg = Image.open(self._serverIcon).convert("RGBA").resize((93, 93))
             else: iconImg = Image.open(self._serverIcon).convert("RGBA").resize((93, 93))
         except Exception:
-            try: iconImg = Image.open("bot/assets/placeholderIcon.jpg").convert("RGBA").resize((93, 93))
+            try: iconImg = Image.open("bot/assets/icons/discord.jpg").convert("RGBA").resize((93, 93))
             except Exception: iconImg = Image.new("RGBA", (93, 93), (112, 128, 144, 255))
 
         finalImg.paste(chartImg, (50, 250), mask=chartImg)

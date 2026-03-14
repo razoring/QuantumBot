@@ -28,7 +28,7 @@ GIT = os.getenv("GIT_TOKEN")
 REGISTRATIONS: dict[int, asyncio.Future] = {}
 models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 BOT_INVITE = "IN BETA"
-BOT_ICON = "bot/assets/icon.png"
+BOT_ICON = "bot/assets/icons/quantum.png"
 
 humanizer = functions.Humanizer()
 git = Github(auth=Auth.Token(GIT))
@@ -432,7 +432,7 @@ class Robot(commands.Cog):
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="account", description="Display account information (hidden from others)")
+    @app_commands.command(name="me", description="Display account information")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
     async def account(self, interaction: discord.Interaction):

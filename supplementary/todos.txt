@@ -1,4 +1,5 @@
 IMPORTANT:
+Assign verified role via bot
 Fix feedback loop
 Implement Requests tracking (popularity, usage data)
 Take industry average into calculations
