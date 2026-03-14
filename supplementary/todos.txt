@@ -1,9 +1,9 @@
 IMPORTANT:
+Fix feedback loop
 Implement Requests tracking (popularity, usage data)
 Take industry average into calculations
 Yahoo Analyst Predictions
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
-Fix aiohttp.client_exceptions.ClientOSError: [Errno 1] [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2633) issue
 
 TBD SOON:
 Polymarket data
@@ -28,6 +28,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Fix aiohttp.client_exceptions.ClientOSError: [Errno 1] [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2633) issue
 Change variable names
 Make rate buttons adjust model
     Make separate feedback button to send errors

@@ -361,7 +361,9 @@ class Charts:
                 resultsMap[h] = (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
                 continue
             
-            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), "LOGISTIC_V4")
+            # Include weight values in cache key to ensure mutation changes the chart
+            weightValues = tuple([settings[0] for settings in configs.values()])
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), weightValues, "LOGISTIC_V5")
             with self._CACHE_LOCK:
                 cached = self._CACHE.get(key)
                 if cached is not None:
@@ -605,6 +607,8 @@ class Charts:
                 raw, _ = self._forecast(stock, window, histories, startDate, forward=len(actuals), parallel=True)
                 result = minimize(self._smapeLoss, bias, args=(raw, actuals), method='SLSQP', bounds=self._BOUNDS, constraints=self._CONSTRAINTS)
                 bestWeight = result.x
+                # Re-apply weights to histories for the final forecast
+                histories = {90: [bestWeight[0], "D"], 180: [bestWeight[1], "D"], 365: [bestWeight[2], "D"], 730: [bestWeight[3], "D"], 1825: [bestWeight[4], "D"]}
             else:
                 bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
 
@@ -1139,6 +1143,8 @@ def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = No
                     (ticker, serializedWeights, conf, now)
                 )
                 DB_CONNECTION.commit()
+                with Charts._CACHE_LOCK:
+                    Charts._CACHE.clear()
     except Exception:
         traceback.print_exc()
 
