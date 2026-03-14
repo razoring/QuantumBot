@@ -700,7 +700,7 @@ class Charts:
                             etf_pct = np.linspace(0, past_3mo_pct, forward + 1)
                             
                             # 25% Industry Weighting
-                            combined_pct = (ticker_pct * 0.75) + (etf_pct * 0.25)
+                            combined_pct = (ticker_pct * 0.9) + (etf_pct * 0.1)
                             prophetTrend = prophetTrend[0] * (1 + combined_pct)
                             
                             # Record for visual factors later
@@ -787,13 +787,13 @@ class Charts:
             # Add Sector Momentum to the labels
             info = stock.info
             sector_key = info.get("sectorKey", "").lower()
-            etf_symbol = self._SECTOR_MAP.get(sector_key)
-            if etf_symbol and 'sector_impact_pct' in locals():
+            etf = self._SECTOR_MAP.get(sector_key)
+            if etf and 'sector_impact_pct' in locals():
                 color = themes.brand if sector_impact_pct > 0 else themes.red
                 symbol = themes.arrowUp if sector_impact_pct > 0 else themes.arrowDown
                 factors.append({
                     "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct):.1f}%", "color": color},
-                    "label": f"Sector Trend ({etf_symbol})"
+                    "label": f"{etf} Sector Trend (10%)"
                 })
         except Exception: pass
 
