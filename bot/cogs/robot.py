@@ -539,6 +539,7 @@ class Feedback(discord.ui.View):
         self.serverName = serverName
         self.serverInvite = serverInvite
         self.serverIcon = serverIcon
+        self._processing = False
         self._updateLabels()
 
     def _updateLabels(self):
@@ -551,6 +552,8 @@ class Feedback(discord.ui.View):
                     child.label = f"👎 {dislikes}" if dislikes > 0 else "👎"
 
     async def feedbackSubmit(self, interaction: discord.Interaction, rating):
+        if self._processing: return
+        self._processing = True
         try:
             confirmEmbed = discord.Embed(color=discord.Color.teal(), title="Vote Received")
             voteType = "negative" if rating == "👎" else "positive"
@@ -584,26 +587,46 @@ class Feedback(discord.ui.View):
                 self._updateLabels()
                 
                 if originalMessage:
-                    self.file.seek(0)
-                    file = discord.File(self.file, filename="output.png")
-                    if len(originalMessage.embeds) > 0:
-                        embed = originalMessage.embeds[0]
-                        embed.set_image(url="attachment://output.png")
-                        await originalMessage.edit(attachments=[file], embed=embed, view=self)
-                    else:
-                        await originalMessage.edit(attachments=[file], view=self)
+                    attempts = 0
+                    success = False
+                    while attempts < 3 and not success:
+                        try:
+                            attempts += 1
+                            self.file.seek(0)
+                            file = discord.File(self.file, filename="output.png")
+                            if len(originalMessage.embeds) > 0:
+                                embed = originalMessage.embeds[0]
+                                embed.set_image(url="attachment://output.png")
+                                await originalMessage.edit(attachments=[file], embed=embed, view=self)
+                            else:
+                                await originalMessage.edit(attachments=[file], view=self)
+                            success = True
+                        except Exception as e:
+                            if attempts >= 3: raise e
+                            await asyncio.sleep(1)
             
             else: # rating == "👍"
                 self._updateLabels()
                 if originalMessage:
-                    await originalMessage.edit(view=self)
+                    attempts = 0
+                    success = False
+                    while attempts < 3 and not success:
+                        try:
+                            attempts += 1
+                            await originalMessage.edit(view=self)
+                            success = True
+                        except Exception as e:
+                            if attempts >= 3: raise e
+                            await asyncio.sleep(1)
 
         except Exception:
             traceback.print_exc()
             try:
-                errorEmbed = discord.Embed(color=discord.Color.red(), title="Error", description="An error occurred while processing your feedback.")
+                errorEmbed = discord.Embed(color=discord.Color.red(), title="Error", description="An error occurred while processing your feedback. Please try again.")
                 await interaction.followup.send(embed=errorEmbed, ephemeral=True)
             except: pass
+        finally:
+            self._processing = False
 
     @discord.ui.button(label="Set Alert", style=discord.ButtonStyle.green, custom_id="SetAlertButton")
     async def setAlert(self, interaction: discord.Interaction, button: discord.ui.Button):

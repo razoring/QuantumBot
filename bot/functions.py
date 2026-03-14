@@ -1007,14 +1007,16 @@ def removeAlert(alertID):
         return False
 
 EPHEMERAL_FEEDBACK: dict[str, dict] = {}
+EPHEMERAL_LOCK = threading.RLock()
 DISLIKE_STRENGTH = 2
 
 def getTickerFeedback(ticker: str):
     ticker = ticker.upper()
     likes, dislikes = 0, 0
-    if ticker in EPHEMERAL_FEEDBACK:
-        data = EPHEMERAL_FEEDBACK[ticker]
-        likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
+    with EPHEMERAL_LOCK:
+        if ticker in EPHEMERAL_FEEDBACK:
+            data = EPHEMERAL_FEEDBACK[ticker]
+            likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
     
     conf = 0.1
     try:
@@ -1031,13 +1033,14 @@ def getTickerFeedback(ticker: str):
 def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = None):
     ticker = ticker.upper()
     
-    if ticker not in EPHEMERAL_FEEDBACK:
-        EPHEMERAL_FEEDBACK[ticker] = {"likes": 0, "dislikes": 0}
-    
-    if rating == "👍":
-        EPHEMERAL_FEEDBACK[ticker]["likes"] += 1
-    elif rating == "👎":
-        EPHEMERAL_FEEDBACK[ticker]["dislikes"] += 1
+    with EPHEMERAL_LOCK:
+        if ticker not in EPHEMERAL_FEEDBACK:
+            EPHEMERAL_FEEDBACK[ticker] = {"likes": 0, "dislikes": 0}
+        
+        if rating == "👍":
+            EPHEMERAL_FEEDBACK[ticker]["likes"] += 1
+        elif rating == "👎":
+            EPHEMERAL_FEEDBACK[ticker]["dislikes"] += 1
 
     try:
         with DB_LOCK:
