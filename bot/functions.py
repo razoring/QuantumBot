@@ -283,6 +283,19 @@ class Charts:
     _CACHE = {}
     _CACHE_LOCK = threading.RLock()
     _CAPACITY = 64
+    _SECTOR_MAP = {
+        'technology': 'XLK',
+        'healthcare': 'XLV',
+        'financial-services': 'XLF',
+        'energy': 'XLE',
+        'industrials': 'XLI',
+        'consumer-cyclical': 'XLY',
+        'consumer-defensive': 'XLP',
+        'utilities': 'XLU',
+        'real-estate': 'XLRE',
+        'basic-materials': 'XLB',
+        'communication-services': 'XLC'
+    }
 
     def __init__(self):
         self._TTL = 60*60*24
@@ -425,29 +438,59 @@ class Charts:
 
     def clean(self, values): return self.clean(values[0]) if len(values) < 2 else values
 
+    def _getIndustryAverageWeights(self, industry, sector):
+        try:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    # Try industry first
+                    cursor.execute("SELECT weight FROM ticker WHERE industry = %s AND weight IS NOT NULL;", (industry,))
+                    rows = cursor.fetchall()
+                    
+                    if len(rows) < 3 and sector:
+                        # Try sector if industry data is sparse
+                        cursor.execute("SELECT weight FROM ticker WHERE sector = %s AND weight IS NOT NULL;", (sector,))
+                        rows = cursor.fetchall()
+                    
+                    if len(rows) >= 3:
+                        all_weights = []
+                        for row in rows:
+                            try:
+                                w_data = row[0]
+                                if isinstance(w_data, str): w_data = json.loads(w_data)
+                                if isinstance(w_data, list) and len(w_data) > 0:
+                                    all_weights.append(w_data[0])
+                            except: continue
+                        
+                        if len(all_weights) >= 3:
+                            return np.mean(all_weights, axis=0).tolist()
+        except Exception: pass
+        return [0.2, 0.2, 0.2, 0.2, 0.2]
+
     def _liveTrain(self, ticker, progress=None):
         ticker = str(ticker).upper()
         now = datetime.now().replace(tzinfo=None)
         end = now - timedelta(days=30)
         start = end - timedelta(days=365*5)
 
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
+
         with DB_LOCK:
             with DB_CONNECTION.cursor() as cursor:
                 cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
                 row = cursor.fetchone()
                 
-        defaults = [[0.1, 0.2, 0.3, 0.2, 0.2], 0]
-        if row is None: weight = defaults
+        if row is None:
+            avg_weights = self._getIndustryAverageWeights(ind, sector)
+            weight = [avg_weights, 0]
         else:
             try: weight = self.clean(row[0])
-            except Exception: weight = defaults
+            except Exception: weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
 
         bestWeight = weight[0]
 
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
         history = stock.history(start=start-timedelta(days=730), end=end, interval="1d")
         if history.empty: return
         
@@ -595,7 +638,12 @@ class Charts:
                             event.set()
                             del self._TRAINING_REGISTRY[ticker]
 
-            if bias is None or (not hasattr(bias, "__getitem__")) or len(bias) == 0: bias = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+            if bias is None or (not hasattr(bias, "__getitem__")) or len(bias) == 0:
+                info = stock.info
+                sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+                ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
+                avg_weights = self._getIndustryAverageWeights(ind, sector)
+                bias = [avg_weights, 0]
             bias = bias[0]
 
             histories = {90: [bias[0], "D"], 180: [bias[1], "D"], 365: [bias[2], "D"], 730: [bias[3], "D"], 1825: [bias[4], "D"]}
@@ -619,6 +667,47 @@ class Charts:
             if future is None: return None
             prophetTrend = np.dot(bestWeight, future)
             prophetSigma = np.dot(bestWeight, futureSigma)
+
+            # --- Sector Momentum Component (Industry Tide) ---
+            try:
+                info = stock.info
+                sector_key = info.get("sectorKey", "").lower()
+                etf_symbol = self._SECTOR_MAP.get(sector_key)
+                
+                if etf_symbol and progress: progress(f"Analyzing {etf_symbol} Sector Tide...")
+                
+                if etf_symbol:
+                    etf = yf.Ticker(etf_symbol)
+                    etf_hist = etf.history(period="6mo", interval="1d")
+                    etf_hist = etf_hist.resample("D").interpolate(method="linear").ffill().bfill()
+                    
+                    if not etf_hist.empty:
+                        # Calculate performance over the past 3 months (90 days)
+                        start_date_3mo = lastDate - timedelta(days=90)
+                        try:
+                            # Handle timezone issues if necessary (etf_hist index is usually UTC-relative from yfinance)
+                            target_idx = etf_hist.index.get_indexer([start_date_3mo], method='pad')[0]
+                            past_price = float(etf_hist.iloc[target_idx]["Close"])
+                            current_price = float(etf_hist["Close"].iloc[-1])
+                            
+                            past_3mo_pct = (current_price / past_price) - 1
+                            
+                            # Calculate percentage deltas for the ticker (from Prophet ensemble)
+                            ticker_pct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
+                            
+                            # The "Sector Tide" is the past 3mo performance projected linearly over the next 90 days
+                            # This creates a growth/decay curve matching the actual historical momentum
+                            etf_pct = np.linspace(0, past_3mo_pct, forward + 1)
+                            
+                            # 25% Industry Weighting
+                            combined_pct = (ticker_pct * 0.75) + (etf_pct * 0.25)
+                            prophetTrend = prophetTrend[0] * (1 + combined_pct)
+                            
+                            # Record for visual factors later
+                            sector_impact_pct = past_3mo_pct * 100
+                        except Exception: pass
+            except Exception: pass
+            # ------------------------------------------------
             
             if model == 1:
                 if prophetTrend is None: raise ValueError("Prophet generation failed")
@@ -694,6 +783,20 @@ class Charts:
                     factors.append({"impact": _getImpact(payDate), "label": f"Dividend Payout [{payDateTimestamp.strftime('%x')}]"})
         except Exception: pass
 
+        try:
+            # Add Sector Momentum to the labels
+            info = stock.info
+            sector_key = info.get("sectorKey", "").lower()
+            etf_symbol = self._SECTOR_MAP.get(sector_key)
+            if etf_symbol and 'sector_impact_pct' in locals():
+                color = themes.brand if sector_impact_pct > 0 else themes.red
+                symbol = themes.arrowUp if sector_impact_pct > 0 else themes.arrowDown
+                factors.append({
+                    "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct):.1f}%", "color": color},
+                    "label": f"Sector Trend ({etf_symbol})"
+                })
+        except Exception: pass
+
         chartBuf = self._buffer(fig)
         if progress: progress("Finalizing Image...")
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), median[-1]
@@ -767,7 +870,10 @@ class Charts:
             elif dates[-1].year != dates[0].year: fmt = "%b %Y"
             else: fmt = "%b %d"
             
-            ax.xaxis.set_major_locator(MaxNLocator(nbins=24, min_n_ticks=16))
+            if 2 <= span.days <= 150:
+                ax.xaxis.set_major_locator(mdates.DayLocator(interval=2))
+            else:
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=24, min_n_ticks=16))
             ax.xaxis.set_major_formatter(mdates.DateFormatter(fmt))
             ax.tick_params(axis="x", rotation=90, colors=themes.grayDark, labelcolor=themes.grayDark, labelsize=10)
         

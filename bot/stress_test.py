@@ -24,7 +24,8 @@ def simulate_user(user_id, ticker):
             model=2,
             serverName="StressTestServer",
             serverInvite="https://discord.gg/stresstest",
-            serverIcon="bot/assets/placeholderIcon.jpg"
+            serverIcon="bot/assets/placeholderIcon.jpg",
+            userID=user_id
         )
         duration = time.time() - start_time
         if result:
