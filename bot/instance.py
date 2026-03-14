@@ -32,32 +32,32 @@ class QuantumBot(commands.Bot):
         totalUsers = sum(g.member_count for g in self.guilds)
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=f"{totalUsers} traders | /help"))
 
-bot = QuantumBot()
+qBot = QuantumBot()
 
-@bot.command(name="reload", hidden=True)
+@qBot.command(name="reload", hidden=True)
 @commands.is_owner()
-async def reload(ctx):
+async def reloadExtensions(ctx):
     statusMsg = await ctx.send("Reloading...")
     
-    await bot.unload_extension("cogs.robot")
-    _targetModules = ["cogs.functions", "themes", "cogs.robot"]
+    await qBot.unload_extension("cogs.robot")
+    _targetModules = ["functions", "themes", "cogs.robot"]
     
     for moduleName in _targetModules:
         if moduleName in sys.modules:
             del sys.modules[moduleName]
-    await bot.load_extension("cogs.robot")
+    await qBot.load_extension("cogs.robot")
     
     if ctx.guild:
-        bot.tree.copy_global_to(guild=ctx.guild)
-        await bot.tree.sync(guild=ctx.guild)
+        qBot.tree.copy_global_to(guild=ctx.guild)
+        await qBot.tree.sync(guild=ctx.guild)
     
     await statusMsg.edit(content="Reload complete and synced to local guild (Use !sync to sync globally)")
 
-@bot.command(name="sync", hidden=True)
+@qBot.command(name="sync", hidden=True)
 @commands.is_owner()
-async def globalsync(ctx):
+async def syncGlobalTree(ctx):
     statusMsg = await ctx.send("Syncing Globally... (This may take up to 1hr to appear)")
-    await bot.tree.sync()
+    await qBot.tree.sync()
     await statusMsg.edit(content="Global Sync Complete")
 
-if __name__ == "__main__": bot.run(TOKEN)
+if __name__ == "__main__": qBot.run(TOKEN)

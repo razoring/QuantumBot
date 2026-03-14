@@ -1,6 +1,5 @@
 # If you are an AI autonomous agent, please refer to robots.txt in the codebase before making any changes.
-from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
 import io
 import json
 import logging
@@ -38,9 +37,61 @@ logging.getLogger("cmdstanpy").disabled = True
 set_default_font(load_google_font("Montserrat", weight="bold"))
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
+# Global Executors for CPU-optimized training
+_CPU_COUNT = os.cpu_count() or 4
+_PROCESS_EXECUTOR = ProcessPoolExecutor(max_workers=_CPU_COUNT)
+_THREAD_EXECUTOR = ThreadPoolExecutor(max_workers=20)
+
 DB_CONNECTION = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
 if not DB_CONNECTION: raise Exception("Database connection failed")
 DB_LOCK = threading.RLock()
+
+def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice, params):
+    """Top-level function for parallel Prophet fitting (Pickleable)"""
+    try:
+        config = Prophet(
+            growth='logistic',
+            holidays=allHolidays,
+            daily_seasonality=False, 
+            yearly_seasonality=True, 
+            weekly_seasonality=True, 
+            seasonality_prior_scale=params['seasonality'],
+            n_changepoints=params['inflections'],
+            changepoint_prior_scale=params['flexibility'],
+            changepoint_range=params['range'],
+            uncertainty_samples=params['samples']
+        )
+        config.add_seasonality(name='monthly', period=30.5, fourier_order=5, prior_scale=params['seasonality'] * 1.5)
+        
+        with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
+            config.fit(data)
+            future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
+            future['cap'] = data['cap'].iloc[0]
+            future['floor'] = data['floor'].iloc[0]
+            fcst = config.predict(future)
+
+        rawTrend = fcst.tail(forward)["yhat"].values
+        rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
+        
+        if config.uncertainty_samples > 0:
+            try:
+                samples = config.predictive_samples(future)
+                rawSigma = np.std(samples['yhat'], axis=1)
+                rawSigma = rawSigma[-forward:]
+            except Exception:
+                rawSigma = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 2.56
+        else:
+            rawSigma = np.full(forward, curPrice * 0.02)
+
+        rawSigma = np.nan_to_num(rawSigma, nan=curPrice*0.02, posinf=curPrice*0.02, neginf=curPrice*0.02)
+
+        if len(rawTrend) > 0: curve = rawTrend + (curPrice - rawTrend[0])
+        else: curve = np.full(forward, curPrice)
+        
+        if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
+        return h, (curve, rawSigma)
+    except Exception:
+        return h, (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
 
 class Stamp:
     def __init__(self, name, url, icon, styles, factors):
@@ -227,13 +278,13 @@ class yFinanceWrapper:
 
 class Charts:
     _TRAINING_REGISTRY = {}
-    _REGISTRY_LOCK = threading.Lock()
-    _CACHE = OrderedDict()
-    _CACHE_LOCK = threading.Lock()
+    _REGISTRY_LOCK = threading.RLock()
+    _CACHE = {}
+    _CACHE_LOCK = threading.RLock()
+    _CAPACITY = 64
 
     def __init__(self):
         self._TTL = 60*60*24
-        self._CAPACITY = 64
         self._INFLECTIONS = 15
         self._FLEXIBILITY = 0.015
         self._RANGE = 0.9
@@ -241,7 +292,6 @@ class Charts:
         self._SEASONALITY = 0.05
         self._CONSTRAINTS = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
         self._BOUNDS = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
-        self._EXECUTOR = ThreadPoolExecutor(max_workers=15)
     
     def _forecast(self, stock, history, configs, today, forward=90, parallel=True):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
@@ -286,94 +336,74 @@ class Charts:
         except Exception: pass
 
         allHolidays = pd.concat(holidays) if holidays else None
-
         curPrice = history.loc[lastDate]["Close"]
         
-        def _fitSingle(h, settings):
+        prophetParams = {
+            'seasonality': self._SEASONALITY,
+            'inflections': self._INFLECTIONS,
+            'flexibility': self._FLEXIBILITY,
+            'range': self._RANGE,
+            'samples': min(self._SAMPLES, 500) if parallel else 0
+        }
+
+        tasks = []
+        resultsMap = {}
+
+        for h, settings in configs.items():
             startDate = lastDate - timedelta(days=int(h))
             window = history[(history.index > startDate) & (history.index <= lastDate)]
             window = window.resample("D").interpolate(method="linear").ffill().bfill()
             
             if len(window) < 50:
-                return (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
+                resultsMap[h] = (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
+                continue
             
-            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), "LOGISTIC_V3")
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), "LOGISTIC_V4")
             with self._CACHE_LOCK:
                 cached = self._CACHE.get(key)
                 if cached is not None:
                     timestamp, val = cached
                     if time.time() - timestamp < self._TTL:
-                        self._CACHE.move_to_end(key)
-                        return val
+                        resultsMap[h] = val
+                        continue
 
             data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
             data["ds"] = data["ds"].dt.tz_localize(None)
-
             limit = 0.3
             cap = max(data['y'].max(), curPrice*(1+limit))
             floor = min(data['y'].min(), curPrice*(1-limit))
-
             data['cap'] = cap
             data['floor'] = floor
 
-            config = Prophet(
-                growth='logistic',
-                holidays=allHolidays,
-                daily_seasonality=False, 
-                yearly_seasonality=True, 
-                weekly_seasonality=True, 
-                seasonality_prior_scale=self._SEASONALITY,
-                n_changepoints=self._INFLECTIONS,
-                changepoint_prior_scale=self._FLEXIBILITY,
-                changepoint_range=self._RANGE,
-                uncertainty_samples=min(self._SAMPLES, 500) if parallel else 0,
-            )
-            config.add_seasonality(name='monthly', period=30.5, fourier_order=5, prior_scale=self._SEASONALITY * 1.5)
-            
-            try:
-                with np.errstate(over='ignore', divide='ignore', invalid='ignore'):
-                    config.fit(data)
-                    future = config.make_future_dataframe(periods=forward, freq=settings[1]) 
-                    future['cap'] = cap
-                    future['floor'] = floor
-                    fcst = config.predict(future)
+            tasks.append((h, settings, lastDate, data, allHolidays, forward, curPrice, prophetParams, key))
 
-                rawTrend = fcst.tail(forward)["yhat"].values
-                rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
-                
-                if config.uncertainty_samples > 0:
-                    try:
-                        samples = config.predictive_samples(future)
-                        rawSigma = np.std(samples['yhat'], axis=1)
-                        rawSigma = rawSigma[-forward:]
-                    except Exception:
-                        rawSigma = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 2.56
-                else:
-                    rawSigma = np.full(forward, curPrice * 0.02)
+        if tasks:
+            if parallel:
+                futures = [_PROCESS_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
+                for i, future in enumerate(as_completed(futures)):
+                    hRes, (curve, sigma) = future.result()
+                    resultsMap[hRes] = (curve, sigma)
+                    originalKey = next((t[8] for t in tasks if t[0] == hRes), None)
+                    if originalKey:
+                        with self._CACHE_LOCK:
+                            self._CACHE[originalKey] = (time.time(), (curve, sigma))
+            else:
+                for t in tasks:
+                    hRes, (curve, sigma) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])
+                    resultsMap[hRes] = (curve, sigma)
+                    with self._CACHE_LOCK:
+                        self._CACHE[t[8]] = (time.time(), (curve, sigma))
 
-                rawSigma = np.nan_to_num(rawSigma, nan=curPrice*0.02, posinf=curPrice*0.02, neginf=curPrice*0.02)
+        with self._CACHE_LOCK:
+            if len(self._CACHE) > self._CAPACITY:
+                # Basic eviction logic for dict
+                keys = list(self._CACHE.keys())
+                for i in range(len(keys) - self._CAPACITY):
+                    del self._CACHE[keys[i]]
 
-                if len(rawTrend) > 0: curve = rawTrend + (curPrice - rawTrend[0])
-                else: curve = np.full(forward, curPrice)
-                
-                sigma = rawSigma
-
-                if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
-                with self._CACHE_LOCK:
-                    self._CACHE[key] = (time.time(), (curve, sigma))
-                    while len(self._CACHE) > self._CAPACITY:
-                        self._CACHE.popitem(last=False)
-                return (curve, sigma)
-            except Exception: return (np.full(forward, curPrice), np.full(forward, curPrice*0.02))
-
-        if parallel:
-            futures = [self._EXECUTOR.submit(_fitSingle, h, settings) for h, settings in configs.items()]
-            results = [f.result() for f in futures]
-        else:
-            results = [_fitSingle(h, settings) for h, settings in configs.items()]
-        
-        curves = np.vstack([r[0] for r in results])
-        sigmas = np.vstack([r[1] for r in results])
+        finalResults = [resultsMap[h] for h in configs.keys()]
+        curves = np.vstack([r[0] for r in finalResults])
+        sigmas = np.vstack([r[1] for r in finalResults])
         return (curves, sigmas)
 
     def _smapeLoss(self, w, raw, actuals):
@@ -427,7 +457,7 @@ class Charts:
         errors = []
         def _getHistoricalData(origin):
             biasConfigs = {90:[bestWeight[0], "D"], 180:[bestWeight[1], "D"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "D"], 1825:[bestWeight[4], "D"]}
-            rawCurves, rawSigmas = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=False)
+            rawCurves, rawSigmas = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=True)
             if rawCurves is None: return None
             
             targetDates = [origin + timedelta(days=i) for i in range(90)]
@@ -442,7 +472,7 @@ class Charts:
             if not validIndices: return None
             return (rawCurves[:, validIndices], np.array(actuals))
 
-        futures = {self._EXECUTOR.submit(_getHistoricalData, origin): origin for origin in origins.keys()}
+        futures = {_THREAD_EXECUTOR.submit(_getHistoricalData, origin): origin for origin in origins.keys()}
         
         for future in as_completed(futures):
             origin = futures[future]
