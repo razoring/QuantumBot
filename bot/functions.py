@@ -49,6 +49,7 @@ DB_LOCK = threading.RLock()
 def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice, params):
     """Top-level function for parallel Prophet fitting (Pickleable)"""
     try:
+        uncertaintySamples = params.get('uncertaintySamples', 0)
         config = Prophet(
             growth='logistic',
             holidays=allHolidays,
@@ -59,7 +60,7 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
             n_changepoints=params['inflections'],
             changepoint_prior_scale=params['flexibility'],
             changepoint_range=params['range'],
-            uncertainty_samples=params['samples']
+            uncertainty_samples=uncertaintySamples
         )
         config.add_seasonality(name='monthly', period=30.5, fourier_order=5, prior_scale=params['seasonality'] * 1.5)
         
@@ -293,14 +294,15 @@ class Charts:
         self._CONSTRAINTS = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
         self._BOUNDS = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
     
-    def _forecast(self, stock, history, configs, today, forward=90, parallel=True):
+    def _forecast(self, stock, history, configs, today, forward=90, parallel=True, uncertaintySamples=None):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
         if today not in history.index:
             locs = history.index.get_indexer([today], method='pad')
             if locs[0] == -1: return None
             lastDate = history.index[locs[0]]
         else: lastDate = today
-
+        
+        # ... (rest of holidays and curPrice logic remains same)
         holidays = []
         try:
             dates = stock.get_earnings_dates()
@@ -338,12 +340,13 @@ class Charts:
         allHolidays = pd.concat(holidays) if holidays else None
         curPrice = history.loc[lastDate]["Close"]
         
+        samples = uncertaintySamples if uncertaintySamples is not None else (min(self._SAMPLES, 500) if parallel else 0)
         prophetParams = {
             'seasonality': self._SEASONALITY,
             'inflections': self._INFLECTIONS,
             'flexibility': self._FLEXIBILITY,
             'range': self._RANGE,
-            'samples': min(self._SAMPLES, 500) if parallel else 0
+            'uncertaintySamples': samples
         }
 
         tasks = []
@@ -450,15 +453,16 @@ class Charts:
         window = history.loc[start.strftime('%Y-%m-%d'):end.strftime('%Y-%m-%d')]
         daily = window.resample("D").interpolate()
         if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
-        origins = window["Close"].resample("1W-MON").last().dropna()
+        origins = window["Close"].resample("1MS").last().dropna()
 
         bias = None
         weights = None
         errors = []
         def _getHistoricalData(origin):
             biasConfigs = {90:[bestWeight[0], "D"], 180:[bestWeight[1], "D"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "D"], 1825:[bestWeight[4], "D"]}
-            rawCurves, rawSigmas = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=True)
-            if rawCurves is None: return None
+            res = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=True, uncertaintySamples=0)
+            if res is None: return None
+            rawCurves, rawSigmas = res
             
             targetDates = [origin + timedelta(days=i) for i in range(90)]
             validIndices = []
@@ -1078,9 +1082,11 @@ def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = No
                 cursor.execute("SELECT weight, confidence FROM ticker WHERE ticker = %s", (ticker,))
                 row = cursor.fetchone()
                 
-                weights = currentWeights if currentWeights else [0.2, 0.2, 0.2, 0.2, 0.2]
-                conf = 0.1
-                trainingCount = 0
+                likes, dislikes = 0, 0
+                with EPHEMERAL_LOCK:
+                    if ticker in EPHEMERAL_FEEDBACK:
+                        data = EPHEMERAL_FEEDBACK[ticker]
+                        likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
 
                 if row:
                     weightsRaw = row[0]
@@ -1099,13 +1105,22 @@ def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = No
                         conf = row[1]
 
                 if rating == "👍":
-                    conf = max(0.0, conf - 0.01)
+                    # Positive feedback locks in the model (decreases mutation potential)
+                    conf = max(0.01, conf - 0.02)
                 elif rating == "👎":
-                    conf = min(1.0, conf + DISLIKE_STRENGTH)
+                    # Calculate dynamic mutation strength based on feedback ratio
+                    # Higher likes = lower mutation strength. No likes = 1.0 (max mutation)
+                    mutationStrength = 1.0 / (1.0 + (likes / (dislikes + 1.0)))
+                    
+                    # Ensure confidence reflects the current "vettedness" for database
+                    conf = min(1.0, conf + mutationStrength)
+                    
+                    # Stochastic Jump: Mix current weights with a random target
                     randomTarget = np.random.rand(5)
                     randomTarget /= randomTarget.sum()
                     
-                    weights = [w * (1 - conf) + rt * conf for w, rt in zip(weights, randomTarget)]
+                    # Shift weights by the dynamic mutation strength
+                    weights = [w * (1 - mutationStrength) + rt * mutationStrength for w, rt in zip(weights, randomTarget)]
                     total = sum(weights)
                     if total > 0: weights = [w / total for w in weights]
 
