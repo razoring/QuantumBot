@@ -214,6 +214,7 @@ class Robot(commands.Cog):
                 await interaction.followup.send(embed=self.lookup(query=ticker, header="Did you mean these instead of"), ephemeral=True)
                 return
 
+            functions.recordRequest(interaction.user.id, ticker)
             info = functions.yFinanceWrapper(ticker=ticker)
             static = getStatic(info)
             
@@ -298,7 +299,18 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit(text))
                 except Exception: pass
 
-            img = await asyncio.to_thread(charts.history, ticker, duration, interval.value if interval else None, serverName, inviteUrl, icon, static, progress)
+            img = await asyncio.to_thread(
+                charts.history, 
+                ticker, 
+                duration, 
+                interval.value if interval else None, 
+                serverName, 
+                inviteUrl, 
+                icon, 
+                static,
+                interaction.user.id,
+                progress
+            )
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
@@ -381,12 +393,12 @@ class Robot(commands.Cog):
                 try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
                 except Exception: pass
 
-            img, predictedPrice = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, progress_cb)
+            img, predictedPrice = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, progress_cb)
             
             if img is None:
                 warning = True
                 progress_cb("Using Extrapolation Model...")
-                img, predictedPrice = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, progress_cb)
+                img, predictedPrice = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id, progress_cb)
 
             if img:
                 progress_cb("Finalizing/Cleaning...")
@@ -428,8 +440,17 @@ class Robot(commands.Cog):
         try:
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
             user = functions.User(discordID=interaction.user.id)
+            analytics = user.getAnalytics()
+            
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Account Information")
-            embed.description = f"Discord ID: {interaction.user.id}\nUsername: {interaction.user.name}\nRegistered: Yes"
+            desc = f"Discord ID: {interaction.user.id}\nUsername: {interaction.user.name}\nRegistered: Yes\n\n"
+            desc += f"**Requests Made:**\n"
+            desc += f"Total: {analytics['total']}\n"
+            desc += f"Monthly: {analytics['monthly']}\n"
+            desc += f"Weekly: {analytics['weekly']}\n"
+            desc += f"Daily: {analytics['daily']}\n"
+            
+            embed.description = desc
             await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             traceback.print_exc()
@@ -524,6 +545,7 @@ class Update(discord.ui.View):
     
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        functions.recordRequest(interaction.user.id, self.ticker)
         new_info = functions.yFinanceWrapper(ticker=self.ticker)
         new_static = getStatic(new_info)
         
@@ -577,7 +599,8 @@ class Feedback(discord.ui.View):
                     self.model, 
                     self.serverName, 
                     self.serverInvite, 
-                    self.serverIcon
+                    self.serverIcon,
+                    interaction.user.id
                 )
                 
                 if img:

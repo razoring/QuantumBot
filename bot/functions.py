@@ -527,7 +527,8 @@ class Charts:
                 DB_CONNECTION.commit()
         return weights
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon, progress=None):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, progress=None):
+        recordRequest(userID, ticker)
         forward = 90
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
@@ -822,7 +823,8 @@ class Charts:
         buf.seek(0)
         return buf
 
-    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, staticQuote, progress=None):
+    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, staticQuote, userID, progress=None):
+        recordRequest(userID, ticker)
         stock = yf.Ticker(ticker)
         periods = ["1d","5d","1mo","3mo","6mo","1y","ytd","2y","5y","10y","max"]
         intervals = ["2m","15m","30m","60m","1d","5d","1mo","3mo"]
@@ -1000,9 +1002,42 @@ class User():
                     row = cur.fetchone()
                     return row[0] if row is not None else None
         
-        cursor.execute("select * from account where discord = %s", (str(self._discordID),))
+        cursor.execute("select id from account where discord = %s", (str(self._discordID),))
         row = cursor.fetchone()
         return row[0] if row is not None else None
+
+    def getAnalytics(self):
+        try:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    accountID = self.accountFromDiscord(cursor=cursor)
+                    if not accountID: return {"total": 0, "monthly": 0, "weekly": 0, "daily": 0}
+
+                    now = int(time.time())
+                    day = now - 86400
+                    week = now - 604800
+                    month = now - 2592000
+
+                    # Total
+                    cursor.execute("SELECT count(*) FROM request WHERE account = %s", (accountID,))
+                    total = cursor.fetchone()[0]
+
+                    # Daily
+                    cursor.execute("SELECT count(*) FROM request WHERE account = %s AND (updated::bigint) > %s", (accountID, day))
+                    daily = cursor.fetchone()[0]
+
+                    # Weekly
+                    cursor.execute("SELECT count(*) FROM request WHERE account = %s AND (updated::bigint) > %s", (accountID, week))
+                    weekly = cursor.fetchone()[0]
+
+                    # Monthly
+                    cursor.execute("SELECT count(*) FROM request WHERE account = %s AND (updated::bigint) > %s", (accountID, month))
+                    monthly = cursor.fetchone()[0]
+
+                    return {"total": total, "monthly": monthly, "weekly": weekly, "daily": daily}
+        except Exception:
+            traceback.print_exc()
+            return {"total": 0, "monthly": 0, "weekly": 0, "daily": 0}
 
     def createAccount(self, marketing:bool):
         try:
@@ -1043,6 +1078,38 @@ def removeAlert(alertID):
     except Exception:
         traceback.print_exc()
         return False
+
+def recordRequest(userID: int, tickerSymbol: str):
+    tickerSymbol = tickerSymbol.upper()
+    try:
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
+                # 1. Get/Create Ticker
+                cursor.execute("SELECT id FROM ticker WHERE ticker = %s", (tickerSymbol,))
+                row = cursor.fetchone()
+                if row:
+                    tickerID = row[0]
+                else:
+                    cursor.execute(
+                        "INSERT INTO ticker (ticker, updated) VALUES (%s, '0') RETURNING id",
+                        (tickerSymbol,)
+                    )
+                    tickerID = cursor.fetchone()[0]
+                
+                # 2. Get Account
+                user = User(userID)
+                accountID = user.accountFromDiscord(cursor=cursor)
+                
+                # 3. Log Request if account exists
+                if accountID:
+                    now = str(int(time.time()))
+                    cursor.execute(
+                        "INSERT INTO request (account, ticker, updated) VALUES (%s, %s, %s)",
+                        (accountID, tickerID, now)
+                    )
+                    DB_CONNECTION.commit()
+    except Exception:
+        traceback.print_exc()
 
 EPHEMERAL_FEEDBACK: dict[str, dict] = {}
 EPHEMERAL_LOCK = threading.RLock()
