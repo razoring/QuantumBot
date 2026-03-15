@@ -158,18 +158,23 @@ class Stamp:
             rightBBox = [(1740+panelWidth,84),(2436,184)]
             draw.text(xy=(1953, 58), text="Considerations Affecting Prediction:", font=self._font(16), fill=(112, 128, 144))
 
-            for i, factor in enumerate(self._factors[:10]):
-                posX = leftBBox[0][0] if i <= 5 else rightBBox[0][0]
-                posY = leftBBox[0][1] + (i if i <= 5 else i - 6) * 18
+            # Sort factors by impact val if available
+            sorted_factors = sorted(
+                self._factors, 
+                key=lambda x: x.get('impact', {}).get('val', 0) if isinstance(x, dict) else 0, 
+                reverse=True
+            )[:10]
+
+            for i, factor in enumerate(sorted_factors):
+                posX = leftBBox[0][0] if i < 5 else rightBBox[0][0]
+                posY = leftBBox[0][1] + (i % 5) * 20
                 
                 if isinstance(factor, dict) and "impact" in factor:
                     impactStr = f"{factor['impact']['symbol']} {factor['impact']['pct']} "
                     draw.text((posX, posY), impactStr, font=self._font(16), fill=factor['impact']['color'])
                     
-                    try:
-                        prefixWidth = draw.textlength(impactStr, font=self._font(16))
-                    except AttributeError:
-                        prefixWidth = self._font(16).getsize(impactStr)[0]
+                    try: prefixWidth = draw.textlength(impactStr, font=self._font(16))
+                    except AttributeError: prefixWidth = self._font(16).getsize(impactStr)[0]
                         
                     draw.text((posX + prefixWidth, posY), factor['label'], font=self._font(16), fill='white')
                 else:
@@ -692,64 +697,67 @@ class Charts:
             prophetTrend = np.dot(bestWeight, future)
             prophetSigma = np.dot(bestWeight, futureSigma)
 
-            # --- Sector Momentum Component (Industry Tide) ---
+            # --- Integrated Weighted Ensemble (80/10/5/5) ---
+            # 1. Ticker Component (80% Weight)
+            ticker_pct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
+            
+            # 2. Sector Component (10% Weight)
+            sector_pct = np.zeros(forward + 1)
             try:
                 info = stock.info
                 sector_key = info.get("sectorKey", "").lower()
-                etf_symbol = self._SECTOR_MAP.get(sector_key)
-                
-                if etf_symbol and progress: progress(f"Analyzing {etf_symbol} Sector Tide...")
-                
-                if etf_symbol:
-                    etf = yf.Ticker(etf_symbol)
-                    etf_hist = etf.history(period="6mo", interval="1d")
+                etf = self._SECTOR_MAP.get(sector_key)
+                if etf:
+                    if progress: progress(f"Analyzing {etf} Sector Tide...")
+                    etf_ticker = yf.Ticker(etf)
+                    etf_hist = etf_ticker.history(period="6mo", interval="1d")
                     etf_hist = etf_hist.resample("D").interpolate(method="linear").ffill().bfill()
-                    
                     if not etf_hist.empty:
-                        # Calculate performance over the past 3 months (90 days)
                         start_date_3mo = lastDate - timedelta(days=90)
-                        try:
-                            # Handle timezone issues if necessary (etf_hist index is usually UTC-relative from yfinance)
-                            target_idx = etf_hist.index.get_indexer([start_date_3mo], method='pad')[0]
-                            past_price = float(etf_hist.iloc[target_idx]["Close"])
-                            current_price = float(etf_hist["Close"].iloc[-1])
-                            
-                            past_3mo_pct = (current_price / past_price) - 1
-                            
-                            # Calculate percentage deltas for the ticker (from Prophet ensemble)
-                            ticker_pct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
-                            
-                            # The "Sector Tide" is the past 3mo performance projected linearly over the next 90 days
-                            # This creates a growth/decay curve matching the actual historical momentum
-                            etf_pct = np.linspace(0, past_3mo_pct, forward + 1)
-                            
-                            # 25% Industry Weighting
-                            combined_pct = (ticker_pct * 0.9) + (etf_pct * 0.1)
-                            prophetTrend = prophetTrend[0] * (1 + combined_pct)
-                            
-                            # Record for visual factors later
-                            sector_impact_pct = past_3mo_pct * 100
-                        except Exception: pass
+                        target_idx = etf_hist.index.get_indexer([start_date_3mo], method='pad')[0]
+                        past_price = float(etf_hist.iloc[target_idx]["Close"])
+                        current_price = float(etf_hist["Close"].iloc[-1])
+                        total_sector_gain = (current_price / past_price) - 1
+                        sector_pct = np.linspace(0, total_sector_gain, forward + 1)
+                        sector_impact_pct = total_sector_gain * 100
             except Exception: pass
-            # ------------------------------------------------
 
-            # --- Analyst Rating Component ---
+            # 3. Analyst Component (5% Weight)
+            analyst_pct = np.zeros(forward + 1)
             rating_map = {
-                'strong_buy': 0.05,
-                'buy': 0.025,
-                'hold': 0.0,
-                'sell': -0.025,
-                'strong_sell': -0.05
+                'strong_buy': 1.0, 'buy': 0.5, 'hold': 0.0, 
+                'sell': -0.5, 'strong_sell': -1.0
             }
             try:
                 analyst_rating = stock.info.get("recommendationKey", "none").lower()
-                rating_modifier = rating_map.get(analyst_rating, 0.0)
-                
-                if rating_modifier != 0.0:
-                    # Apply linearly across the 90 day window
-                    rating_curve = np.linspace(0, rating_modifier, forward + 1)
-                    prophetTrend = prophetTrend * (1 + rating_curve)
+                rating_score = rating_map.get(analyst_rating, 0.0)
+                if rating_score != 0.0:
+                    analyst_pct = np.linspace(0, rating_score, forward + 1)
             except Exception: pass
+
+            # 4. Behavioural Component (5% Weight)
+            behavioural_pct = np.zeros(forward + 1)
+            try:
+                inst_held = stock.info.get("heldPercentInstitutions", 0.0)
+                short_float = stock.info.get("shortPercentOfFloat", 0.0)
+                insider_held = stock.info.get("heldPercentInsiders", 0.0)
+                
+                # Composite behavioural score (-100% to +100%)
+                # Institutions: 0% to 100% -> 0.0 to 0.5
+                inst_score = inst_held * 0.5
+                # Short Interest: 0% to 20% -> 0.0 to -0.4
+                short_score = max(short_float * -2.0, -0.4)
+                # Insiders: 0% to 5% -> 0.0 to 0.1
+                insider_score = min(insider_held * 2.0, 0.1)
+                
+                total_behavioural_score = inst_score + short_score + insider_score
+                behavioural_pct = np.linspace(0, total_behavioural_score, forward + 1)
+            except Exception: pass
+
+            # Final Blend
+            # Final_Delta = (0.80 * Ticker) + (0.10 * Sector) + (0.05 * Analyst) + (0.05 * Behavioural)
+            final_pct_curve = (0.80 * ticker_pct) + (0.10 * sector_pct) + (0.05 * analyst_pct) + (0.05 * behavioural_pct)
+            prophetTrend = prophetTrend[0] * (1 + final_pct_curve)
             # ------------------------------------------------
             
             if model == 1:
@@ -800,9 +808,9 @@ class Charts:
                         if abs(pct) >= 0.002:
                             symbol = themes.arrowUp if change > 0 else themes.arrowDown
                             color = themes.brand if change > 0 else themes.red
-                        return {"symbol": symbol, "pct": f"{round(abs(pct),2)}%", "color": color}
+                        return {"symbol": symbol, "pct": f"{round(abs(pct),2)}%", "color": color, "val": pct}
             except Exception: pass
-            return {"symbol": themes.mixed, "pct": "0.0%", "color": themes.yellow}
+            return {"symbol": themes.mixed, "pct": "0.0%", "color": themes.yellow, "val": 0.0}
 
         try:
             lastEarnings = stock.get_earnings_dates().index[0].tz_localize(None).date()
@@ -827,7 +835,7 @@ class Charts:
         except Exception: pass
 
         try:
-            # Add Sector Momentum to the labels
+            # Industry Trend [ETF] (10% weight)
             info = stock.info
             sector_key = info.get("sectorKey", "").lower()
             etf = self._SECTOR_MAP.get(sector_key)
@@ -835,22 +843,41 @@ class Charts:
                 color = themes.brand if sector_impact_pct > 0 else themes.red
                 symbol = themes.arrowUp if sector_impact_pct > 0 else themes.arrowDown
                 factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct):.1f}%", "color": color},
+                    "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct * 0.1):.1f}%", "color": color, "val": sector_impact_pct * 0.001},
                     "label": f"Industry Trend [{etf}]"
                 })
-        except Exception: pass
 
-        try:
-            # Add Analyst Rating to the labels
+            # Analyst Rating [Status] (5% weight)
             if 'analyst_rating' in locals() and analyst_rating != 'none':
-                impact_pct = rating_map.get(analyst_rating, 0.0) * 100
+                rating_score = rating_map.get(analyst_rating, 0.0)
+                impact_pct = rating_score * 5.0 # Max 5% impact
                 color = themes.brand if impact_pct > 0 else (themes.red if impact_pct < 0 else themes.yellow)
                 symbol = themes.arrowUp if impact_pct > 0 else (themes.arrowDown if impact_pct < 0 else themes.mixed)
                 formatted_rating = analyst_rating.replace('_', ' ').title()
-                
                 factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(impact_pct):.1f}%", "color": color},
+                    "impact": {"symbol": symbol, "pct": f"{abs(impact_pct):.1f}%", "color": color, "val": impact_pct * 0.01},
                     "label": f"Analyst Rating [{formatted_rating}]"
+                })
+
+            # Behavioural Factors (5% weight)
+            if 'total_behavioural_score' in locals():
+                # Institutions
+                inst_impact = inst_held * 2.5 # 2.5% of total 5%
+                factors.append({
+                    "impact": {"symbol": themes.mixed if inst_held < 0.5 else themes.arrowUp, "pct": f"{abs(inst_impact):.1f}%", "color": themes.brand if inst_held > 0.5 else themes.yellow, "val": inst_impact * 0.01},
+                    "label": ("Institutions Hold Majority" if inst_held > 0.5 else "Retail Traders Hold Majority")+f" [{round(inst_held*100)}%]"
+                })
+                # Short Interest
+                short_impact = short_score * 5.0 # Scales the 0 to -0.4 score back to 0 to -2%
+                factors.append({
+                    "impact": {"symbol": themes.arrowDown if short_float > 0.1 else themes.mixed, "pct": f"{abs(short_impact):.1f}%", "color": themes.red if short_float > 0.1 else themes.yellow, "val": short_impact * 0.01},
+                    "label": f"Short Sentiment (Float) [{round(short_float*100)}%]"
+                })
+                # Insider Movement
+                insider_impact = insider_score * 5.0
+                factors.append({
+                    "impact": {"symbol": themes.arrowUp if insider_held > 0.02 else themes.mixed, "pct": f"{abs(insider_impact):.1f}%", "color": themes.brand if insider_held > 0.02 else themes.yellow, "val": insider_impact * 0.01},
+                    "label": f"Held by Insiders [{round(insider_held*100)}%]"
                 })
         except Exception: pass
 
