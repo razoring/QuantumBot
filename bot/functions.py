@@ -276,6 +276,9 @@ class yFinanceWrapper:
             change = (float(divs.iloc[-1]) / float(divs.iloc[-2]) - 1) * 100
             return f"{round(change, 2)}%"
         return "0%"
+        
+    def getAnalystRating(self):
+        return self._info.get("recommendationKey", "none")
 
 class Charts:
     _TRAINING_REGISTRY = {}
@@ -729,6 +732,25 @@ class Charts:
                         except Exception: pass
             except Exception: pass
             # ------------------------------------------------
+
+            # --- Analyst Rating Component ---
+            rating_map = {
+                'strong_buy': 0.05,
+                'buy': 0.025,
+                'hold': 0.0,
+                'sell': -0.025,
+                'strong_sell': -0.05
+            }
+            try:
+                analyst_rating = stock.info.get("recommendationKey", "none").lower()
+                rating_modifier = rating_map.get(analyst_rating, 0.0)
+                
+                if rating_modifier != 0.0:
+                    # Apply linearly across the 90 day window
+                    rating_curve = np.linspace(0, rating_modifier, forward + 1)
+                    prophetTrend = prophetTrend * (1 + rating_curve)
+            except Exception: pass
+            # ------------------------------------------------
             
             if model == 1:
                 if prophetTrend is None: raise ValueError("Prophet generation failed")
@@ -815,6 +837,20 @@ class Charts:
                 factors.append({
                     "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct):.1f}%", "color": color},
                     "label": f"Industry Trend [{etf}]"
+                })
+        except Exception: pass
+
+        try:
+            # Add Analyst Rating to the labels
+            if 'analyst_rating' in locals() and analyst_rating != 'none':
+                impact_pct = rating_map.get(analyst_rating, 0.0) * 100
+                color = themes.brand if impact_pct > 0 else (themes.red if impact_pct < 0 else themes.yellow)
+                symbol = themes.arrowUp if impact_pct > 0 else (themes.arrowDown if impact_pct < 0 else themes.mixed)
+                formatted_rating = analyst_rating.replace('_', ' ').title()
+                
+                factors.append({
+                    "impact": {"symbol": symbol, "pct": f"{abs(impact_pct):.1f}%", "color": color},
+                    "label": f"Analyst Rating [{formatted_rating}]"
                 })
         except Exception: pass
 
