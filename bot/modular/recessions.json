@@ -1,0 +1,25 @@
+{
+    "_instructions": "When a new recession occurs, add a new entry below with the 'start' and 'end' dates in YYYY-MM-DD format. If the recession is still ongoing, set the 'end' date to the current date or your best projected end date, and update it periodically. Prophet uses these periods to establish 'regime changes' (similar to holidays), which prevents broad macroeconomic distortions from corrupting a ticker's natural seasonal and mathematical growth trends.",
+    "recessions": [
+        {
+            "name": "COVID-19 Recession",
+            "start": "2020-02-01",
+            "end": "2020-04-30"
+        },
+        {
+            "name": "Great Recession",
+            "start": "2007-12-01",
+            "end": "2009-06-30"
+        },
+        {
+            "name": "Early 2000s Recession",
+            "start": "2001-03-01",
+            "end": "2001-11-30"
+        },
+        {
+            "name": "Early 1990s Recession",
+            "start": "1990-07-01",
+            "end": "1991-03-31"
+        }
+    ]
+}

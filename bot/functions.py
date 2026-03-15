@@ -318,6 +318,27 @@ class Charts:
         # ... (rest of holidays and curPrice logic remains same)
         holidays = []
         try:
+            with open("bot/modular/recessions.json", "r") as f:
+                recession_data = json.load(f)
+            for rec in recession_data.get("recessions", []):
+                start_date = pd.Timestamp(rec["start"])
+                end_date = pd.Timestamp(rec["end"])
+                
+                # Only include recessions that intersect our actual historical data timeline
+                if start_date <= pd.Timestamp(lastDate):
+                    # Cap the window at lastDate if the recession extends past our data
+                    effective_end = min(end_date, pd.Timestamp(lastDate))
+                    duration = (effective_end - start_date).days
+                    if duration > 0:
+                        holidays.append(pd.DataFrame({
+                            'holiday': rec["name"],
+                            'ds': [start_date],
+                            'lower_window': 0,
+                            'upper_window': duration,
+                        }))
+        except Exception: pass
+
+        try:
             dates = stock.get_earnings_dates()
             if dates is not None and not dates.empty:
                 holidays.append(pd.DataFrame({
@@ -793,7 +814,7 @@ class Charts:
                 symbol = themes.arrowUp if sector_impact_pct > 0 else themes.arrowDown
                 factors.append({
                     "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct):.1f}%", "color": color},
-                    "label": f"{etf} Sector Trend (10%)"
+                    "label": f"Industry Trend [{etf}]"
                 })
         except Exception: pass
 
