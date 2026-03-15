@@ -1,4 +1,5 @@
 IMPORTANT:
+FIX COLD START TRAINING HANG (prob related to cold start)
 Assign verified role via bot
 Fix feedback loop
 Yahoo Analyst Predictions

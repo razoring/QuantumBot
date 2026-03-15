@@ -42,8 +42,7 @@ def simulate_user(user_id, ticker):
         return False, duration
 
 def run_stress_test(num_users=20):
-    tickers = ["BAC", "WFC", "CVX", "BP", "T", "VZ", "PFE", "MRK", "LLY", "NKE", 
-               "SBUX", "MCD", "BA", "GE", "F", "GM", "MS", "BLK", "AXP", "CAT"]
+    tickers = ["MDA.to","TD.to","RY.to"]
     
     print(f"Starting Stress Test with {num_users} concurrent users...")
     overall_start = time.time()
@@ -74,4 +73,4 @@ def run_stress_test(num_users=20):
     print("="*30)
 
 if __name__ == "__main__":
-    run_stress_test(20)
+    run_stress_test(3)
