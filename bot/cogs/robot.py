@@ -86,9 +86,11 @@ class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.check_alerts.start()
+        self.train_popular.start()
 
     def cog_unload(self):
         self.check_alerts.cancel()
+        self.train_popular.cancel()
 
     @tasks.loop(minutes=5)
     async def check_alerts(self):
@@ -117,6 +119,45 @@ class Robot(commands.Cog):
                                 await user.send(embed=embed)
                                 functions.removeAlert(alertId)
                         except Exception: pass
+        except Exception:
+            traceback.print_exc()
+
+    @tasks.loop(hours=24)
+    async def train_popular(self):
+        now = datetime.datetime.now()
+        if now.weekday() != 5:
+            return
+            
+        try:
+            with functions.DB_LOCK:
+                with functions.DB_CONNECTION.cursor() as cursor:
+                    window = int((datetime.datetime.now() - datetime.timedelta(days=14)).timestamp())
+                    cursor.execute("SELECT COUNT(DISTINCT ticker) FROM Request WHERE CAST(updated AS BIGINT) >= %s", (week_ago,))
+                    row = cursor.fetchone()
+                    if not row or row[0] == 0: return
+                    total_symbols = row[0]
+                    limit = max(1, int(total_symbols * 0.10))
+                    
+                    cursor.execute("""
+                        SELECT t.ticker, COUNT(r.id) as req_count 
+                        FROM Request r 
+                        JOIN Ticker t ON t.id = r.ticker 
+                        WHERE CAST(r.updated AS BIGINT) >= %s
+                        GROUP BY t.ticker 
+                        ORDER BY req_count DESC 
+                        LIMIT %s
+                    """, (window, limit))
+                    rows = cursor.fetchall()
+            
+            tickers_to_train = [r[0] for r in rows if r[0]]
+            
+            if tickers_to_train:
+                charts = functions.Charts()
+                for ticker in tickers_to_train:
+                    try:
+                        await asyncio.to_thread(charts._liveTrain, ticker)
+                    except Exception:
+                        pass
         except Exception:
             traceback.print_exc()
 

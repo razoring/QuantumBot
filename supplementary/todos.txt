@@ -2,8 +2,6 @@ IMPORTANT:
 FIX COLD START TRAINING HANG (prob related to cold start)
 Assign verified role via bot
 Fix feedback loop
-Yahoo Analyst Predictions
-Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 
 TBD SOON:
 Polymarket data
@@ -28,6 +26,8 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Yahoo Analyst Predictions???
+Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Take industry average into calculations
 Implement Requests tracking (popularity, usage data)
 Fix aiohttp.client_exceptions.ClientOSError: [Errno 1] [SSL: SSLV3_ALERT_BAD_RECORD_MAC] sslv3 alert bad record mac (_ssl.c:2633) issue
