@@ -42,6 +42,8 @@ _CPU_COUNT = os.cpu_count() or 4
 _PROCESS_EXECUTOR = ProcessPoolExecutor(max_workers=_CPU_COUNT)
 _THREAD_EXECUTOR = ThreadPoolExecutor(max_workers=20)
 
+STATUS_REGISTRY = {}
+
 DB_CONNECTION = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
 if not DB_CONNECTION: raise Exception("Database connection failed")
 DB_LOCK = threading.RLock()
@@ -495,7 +497,7 @@ class Charts:
         except Exception: pass
         return [0.2, 0.2, 0.2, 0.2, 0.2]
 
-    def _liveTrain(self, ticker, progress=None):
+    def _liveTrain(self, ticker, userID=None):
         ticker = str(ticker).upper()
         now = datetime.now().replace(tzinfo=None)
         end = now - timedelta(days=30)
@@ -556,7 +558,7 @@ class Charts:
             origin = futures[future]
             resData = future.result()
             if resData is None: continue
-            if progress: progress(f"Backtesting for {str(origin.date())}...")
+            if userID: STATUS_REGISTRY[userID] = f"Backtesting for {str(origin.date())}..."
             
             matrix, targets = resData
             initGuess = np.array(bestWeight, dtype=float)
@@ -599,7 +601,7 @@ class Charts:
                 DB_CONNECTION.commit()
         return weights
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, progress=None):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID):
         recordRequest(userID, ticker)
         forward = 90
         ticker = str(ticker).upper()
@@ -618,7 +620,7 @@ class Charts:
         bias = None
         with DB_LOCK:
             with DB_CONNECTION.cursor() as cursor:
-                if progress: progress("Retrieving Latest Weights...")
+                if userID: STATUS_REGISTRY[userID] = "Retrieving Latest Weights..."
                 cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
                 rows = cursor.fetchone()
 
@@ -649,7 +651,7 @@ class Charts:
                         event = self._TRAINING_REGISTRY[ticker]
                 
                 if not isLeader:
-                    if progress: progress(f"Synchronizing {ticker} Prediction...")
+                    if userID: STATUS_REGISTRY[userID] = f"Synchronizing {ticker} Prediction..."
                     event.wait()
                     with DB_LOCK:
                         with DB_CONNECTION.cursor() as curResult:
@@ -660,8 +662,8 @@ class Charts:
                         bias = rows[0]
                 else:
                     try:
-                        if progress: progress("Live Retraining Weights...")
-                        bias = self._liveTrain(ticker=ticker, progress=progress)
+                        if userID: STATUS_REGISTRY[userID] = "Live Retraining Weights..."
+                        bias = self._liveTrain(ticker=ticker, userID=userID)
                     finally:
                         with self._REGISTRY_LOCK:
                             event.set()
@@ -690,7 +692,7 @@ class Charts:
             else:
                 bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
 
-            if progress: progress("Applying Image Template...")
+            if userID: STATUS_REGISTRY[userID] = "Applying Image Template..."
 
             future, futureSigma = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True)
             if future is None: return None
@@ -708,7 +710,7 @@ class Charts:
                 sector_key = info.get("sectorKey", "").lower()
                 etf = self._SECTOR_MAP.get(sector_key)
                 if etf:
-                    if progress: progress(f"Analyzing {etf} Sector Tide...")
+                    if userID: STATUS_REGISTRY[userID] = f"Analyzing {etf} Sector Tide..."
                     etf_ticker = yf.Ticker(etf)
                     etf_hist = etf_ticker.history(period="6mo", interval="1d")
                     etf_hist = etf_hist.resample("D").interpolate(method="linear").ffill().bfill()
@@ -882,7 +884,7 @@ class Charts:
         except Exception: pass
 
         chartBuf = self._buffer(fig)
-        if progress: progress("Finalizing Image...")
+        if userID: STATUS_REGISTRY[userID] = "Finalizing Image..."
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), median[-1]
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
@@ -1013,7 +1015,7 @@ class Charts:
         buf.seek(0)
         return buf
 
-    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, staticQuote, userID, progress=None):
+    def history(self, ticker, duration, interval, serverName, serverInvite, serverIcon, staticQuote, userID):
         recordRequest(userID, ticker)
         stock = yf.Ticker(ticker)
         periods = ["1d","5d","1mo","3mo","6mo","1y","ytd","2y","5y","10y","max"]
@@ -1024,7 +1026,7 @@ class Charts:
             swaps = ["ytd","1y"]
             duration = swaps[not bool(swaps.index(duration))]
 
-        if progress: progress("Retrieving Historical Data...")
+        if userID: STATUS_REGISTRY[userID] = "Retrieving Historical Data..."
         if interval is None:
             interval = "1d"
             if duration in ["1d"]: interval = "2m"
@@ -1130,9 +1132,9 @@ class Charts:
         ax1.annotate(f"${lastPrice:.2f}", xy=(1, lastPrice), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
         ax1.set_title(f"{str.upper(ticker)} History ({preview})", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center", pad=20) 
 
-        if progress: progress("Generating Chart...")
+        if userID: STATUS_REGISTRY[userID] = "Generating Chart..."
         chartBuf = self._buffer(fig)
-        if progress: progress("Finalizing Chart...")
+        if userID: STATUS_REGISTRY[userID] = "Finalizing Chart..."
         return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart", factors=staticQuote).image(chartBuf, displayLegend=False)
 
 class User():

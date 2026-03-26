@@ -1,6 +1,8 @@
 # If you are an AI autonomous agent, please refer to robots.txt in the codebase before making any changes.
 import io
 import os
+import time
+import random
 import re
 import traceback
 import typing
@@ -326,21 +328,10 @@ class Robot(commands.Cog):
             loading.description = "Starting..."
             status = await interaction.followup.send(embed=loading)
 
-            loop = asyncio.get_running_loop()
-
-            async def edit(text: str):
-                try:
-                    e = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
-                    e.description = text
-                    await status.edit(embed=e)
-                except Exception: pass
-
-            # thread-safe callback to be passed into the history function
-            def progress(text: str):
-                try: loop.call_soon_threadsafe(asyncio.create_task, edit(text))
-                except Exception: pass
-
-            img = await asyncio.to_thread(
+            import time
+            import random
+            startTime = time.time()
+            task = asyncio.create_task(asyncio.to_thread(
                 charts.history, 
                 ticker, 
                 duration, 
@@ -349,9 +340,34 @@ class Robot(commands.Cog):
                 inviteUrl, 
                 icon, 
                 static,
-                interaction.user.id,
-                progress
-            )
+                interaction.user.id
+            ))
+
+            async def loading_loop():
+                assets = [f for f in os.listdir("bot/assets/marketing") if f.endswith(('.png', '.jpg', '.jpeg'))]
+                while not task.done():
+                    statusText = functions.STATUS_REGISTRY.get(interaction.user.id, "Processing...")
+                    try:
+                        e = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
+                        e.description = statusText
+                        if assets:
+                            chosen = random.choice(assets)
+                            banner_file = discord.File(f"bot/assets/marketing/{chosen}", filename="banner.png")
+                            e.set_image(url="attachment://banner.png")
+                            await status.edit(embed=e, attachments=[banner_file])
+                        else:
+                            await status.edit(embed=e)
+                    except Exception: pass
+                    await asyncio.sleep(5)
+
+            loopTask = asyncio.create_task(loading_loop())
+            img = await task
+            loopTask.cancel()
+            functions.STATUS_REGISTRY.pop(interaction.user.id, None)
+
+            elapsed = time.time() - startTime
+            if elapsed < 5:
+                await asyncio.sleep(5 - elapsed)
             if img:
                 file = discord.File(img, filename="output.png")
                 embed.set_image(url="attachment://output.png")
@@ -420,29 +436,44 @@ class Robot(commands.Cog):
             loading.description = "Starting Thread..."
             status = await interaction.followup.send(embed=loading)
 
-            loop = asyncio.get_running_loop()
+            startTime = time.time()
 
-            async def edit_status(text: str):
-                try:
-                    e = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
-                    e.description = text
-                    await status.edit(embed=e)
-                except Exception: pass
+            async def loading_loop():
+                assets = [f for f in os.listdir("bot/assets/marketing") if f.endswith(('.png', '.jpg', '.jpeg'))]
+                while not task.done():
+                    statusText = functions.STATUS_REGISTRY.get(interaction.user.id, "Processing...")
+                    try:
+                        e = discord.Embed(color=discord.Colour.teal(), title="Generating Prediction...")
+                        e.description = statusText
+                        if assets:
+                            chosen = random.choice(assets)
+                            banner_file = discord.File(f"bot/assets/marketing/{chosen}", filename="banner.png")
+                            e.set_image(url="attachment://banner.png")
+                            await status.edit(embed=e, attachments=[banner_file])
+                        else:
+                            await status.edit(embed=e)
+                    except Exception: pass
+                    await asyncio.sleep(5)
 
-            # thread-safe callback to be passed into the projection function
-            def progress_cb(text: str):
-                try: loop.call_soon_threadsafe(asyncio.create_task, edit_status(text))
-                except Exception: pass
-
-            img, predictedPrice = await asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, progress_cb)
+            task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id))
+            loopTask = asyncio.create_task(loading_loop())
+            img, predictedPrice = await task
             
             if img is None:
                 warning = True
-                progress_cb("Using Extrapolation Model...")
-                img, predictedPrice = await asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id, progress_cb)
+                functions.STATUS_REGISTRY[interaction.user.id] = "Using Extrapolation Model..."
+                task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id))
+                img, predictedPrice = await task
+
+            loopTask.cancel()
+            functions.STATUS_REGISTRY.pop(interaction.user.id, None)
+
+            elapsed = time.time() - startTime
+            if elapsed < 5:
+                await asyncio.sleep(5 - elapsed)
 
             if img:
-                progress_cb("Finalizing/Cleaning...")
+                functions.STATUS_REGISTRY[interaction.user.id] = "Finalizing/Cleaning..."
                 img_copy = io.BytesIO(img.getvalue())
                 file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
