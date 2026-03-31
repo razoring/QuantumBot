@@ -689,7 +689,7 @@ class Charts:
         
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
-        plotHistory = history[history.index > lastDate - timedelta(days=60)]
+        plotHistory = history[history.index > lastDate - timedelta(days=lookback)]
         
         quantiles = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
         futureDays = np.arange(0, forward + 1)
