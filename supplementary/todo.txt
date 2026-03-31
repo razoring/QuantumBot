@@ -1,5 +1,4 @@
 IMPORTANT:
-Assign verified role via bot
 
 TBD SOON:
 Generate graph variations
@@ -26,6 +25,7 @@ Web API
 Customize Appearance
 
 COMPLETED:
+Assign verified role via bot
 Fix feedback loop ???
 FIX COLD START TRAINING HANG (prob related to cold start)
 Yahoo Analyst Predictions
