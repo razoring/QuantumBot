@@ -1,7 +1,6 @@
 IMPORTANT:
-FIX COLD START TRAINING HANG (prob related to cold start)
+Generate graph variations
 Assign verified role via bot
-Fix feedback loop
 
 TBD SOON:
 Proper Recession Implementation
@@ -27,7 +26,9 @@ Web API
 Customize Appearance
 
 COMPLETED:
-Yahoo Analyst Predictions???
+Fix feedback loop ???
+FIX COLD START TRAINING HANG (prob related to cold start)
+Yahoo Analyst Predictions
 Train on demand (cache every symbol trained, retrain popular symbols on sunday, ttl: 7d)
 Take industry average into calculations
 Implement Requests tracking (popularity, usage data)
