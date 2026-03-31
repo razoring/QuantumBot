@@ -155,21 +155,43 @@ class Stamp:
         contentWidth = contentBBox[1][0]-contentBBox[0][0]
 
         if "predict" in self._styles:
-            panelWidth = math.floor(contentWidth/2)
-            leftBBox = [(1750,84),(2441-panelWidth,184)]
-            rightBBox = [(1740+panelWidth,84),(2436,184)]
             draw.text(xy=(1953, 58), text="Considerations Affecting Prediction:", font=self._font(16), fill=(112, 128, 144))
-
-            # Sort factors by impact val if available
+            
             sorted_factors = sorted(
                 self._factors, 
                 key=lambda x: x.get('impact', {}).get('val', 0) if isinstance(x, dict) else 0, 
                 reverse=True
             )[:10]
 
+            # Dynamic column split with padding
+            leftStartX = 1750
+            maxLeftWidth = 0
+            maxRightWidth = 0
+            rightPadding = 20 # Padding from the right edge of contentBBox
+            
             for i, factor in enumerate(sorted_factors):
-                posX = leftBBox[0][0] if i < 5 else rightBBox[0][0]
-                posY = leftBBox[0][1] + (i % 5) * 20
+                if isinstance(factor, dict) and "impact" in factor:
+                    fullStr = f"{factor['impact']['symbol']} {factor['impact']['pct']} {factor['label']}"
+                else: fullStr = str(factor)
+                try: w = draw.textlength(fullStr, font=self._font(16))
+                except AttributeError: w = self._font(16).getsize(fullStr)[0]
+                
+                if i < 5: maxLeftWidth = max(maxLeftWidth, w)
+                else: maxRightWidth = max(maxRightWidth, w)
+            
+            # Initial right Start X based on left labels
+            rightStartX = leftStartX + maxLeftWidth + 40
+            
+            # Ensure right column has padding on the right edge of contentBBox (2441)
+            # If (rightStartX + maxRightWidth) > (2441 - rightPadding), we need to push back or cap
+            if (rightStartX + maxRightWidth) > (2441 - rightPadding):
+                # Attempt to nudge left if we have room in the center
+                overage = (rightStartX + maxRightWidth) - (2441 - rightPadding)
+                rightStartX = max(leftStartX + maxLeftWidth + 20, rightStartX - overage)
+
+            for i, factor in enumerate(sorted_factors):
+                posX = leftStartX if i < 5 else rightStartX
+                posY = 84 + (i % 5) * 20
                 
                 if isinstance(factor, dict) and "impact" in factor:
                     impactStr = f"{factor['impact']['symbol']} {factor['impact']['pct']} "
@@ -177,7 +199,6 @@ class Stamp:
                     
                     try: prefixWidth = draw.textlength(impactStr, font=self._font(16))
                     except AttributeError: prefixWidth = self._font(16).getsize(impactStr)[0]
-                        
                     draw.text((posX + prefixWidth, posY), factor['label'], font=self._font(16), fill='white')
                 else:
                     draw.text((posX, posY), str(factor), font=self._font(16), fill='white')
@@ -562,7 +583,7 @@ class Charts:
             origin = futures[future]
             resData = future.result()
             if resData is None: continue
-            if userID: STATUS_REGISTRY[userID] = f"Backtesting for {str(origin.date())}..."
+            if userID: STATUS_REGISTRY[userID] = f"Backtesting for {str(origin.date().year)}..."
             
             matrix, targets = resData
             initGuess = np.array(bestWeight, dtype=float)
@@ -898,7 +919,7 @@ class Charts:
                 inst_impact = inst_held * 2.5 # 2.5% of total 5%
                 factors.append({
                     "impact": {"symbol": themes.mixed if inst_held < 0.5 else themes.arrowUp, "pct": f"{abs(inst_impact):.1f}%", "color": themes.brand if inst_held > 0.5 else themes.yellow, "val": inst_impact * 0.01},
-                    "label": ("Institutions Hold Majority" if inst_held > 0.5 else "Retail Traders Hold Majority")+f" [{round(inst_held*100)}%]"
+                    "label": ("Institutions Hold Majority" if inst_held > 0.5 else "Retail Traders Hold Majority")+f" [{round((inst_held if inst_held > 0.5 else (1-inst_held))*100)}%]"
                 })
                 # Short Interest
                 short_impact = short_score * 5.0 # Scales the 0 to -0.4 score back to 0 to -2%
@@ -922,7 +943,7 @@ class Charts:
                 color = themes.brand if real_impact > 0 else (themes.red if real_impact < 0 else themes.yellow)
                 symbol = themes.arrowUp if real_impact > 0 else (themes.arrowDown if real_impact < 0 else themes.mixed)
                 
-                label_map = {'rates': 'Interest Rates', 'energy': 'Energy Costs', 'economy': 'Market Momentum'}
+                label_map = {'rates': 'Interest Rates', 'energy': 'Energy Costs', 'economy': 'Economic'}
                 base_label = label_map.get(key, key)
                 ticker_label = self._MACRO_MAP.get(key, "")
                 
