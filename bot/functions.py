@@ -203,16 +203,56 @@ class Stamp:
                 else:
                     draw.text((posX, posY), str(factor), font=self._font(16), fill='white')
         else:
-            panelWidth = math.floor(contentWidth/3)
-            col1 = [(1750,84),(2441-panelWidth*2,184)]
-            col2 = [(1740+panelWidth+20,84),(2441-panelWidth,184)]
-            col3 = [(1740+panelWidth*2,84),(2441,184)]
-
             draw.text(xy=(2007, 58), text="Current Ticker Information:", font=self._font(16), fill=(112, 128, 144))
             if self._factors:
-                draw.text(xy=col1[0], text="• 52 Week High: %s\n• 52 Week Low: %s\n• Volume: %s\n• Average Volume: %s\n• Market Cap: %s"%(round(self._factors["get52wkHigh"],2),round(self._factors["get52wkLow"],2),Humanizer.suffix(self._factors["getVolume"]),Humanizer.suffix(self._factors["getAvgVolume"]),Humanizer.suffix(self._factors["getMktCap"])), font=self._font(16), fill='white')
-                draw.text(xy=col2[0], text=( "• P/E Ratio: {}\n" "• EPS Ratio: {}\n" "• Beta: {}\n" "• Annual Yield: {}%\n" "• Monthly Yield: {}%" ).format( round(self._factors["getPERatio"], 2), round(self._factors["getEPSRatio"], 2), round(self._factors["getBeta"], 2), round(self._factors["getAnnualYield"], 2), round(self._factors["getMonthlyYield"], 2)), font=self._font(16), fill='white')
-                draw.text(xy=col3[0], text = ( f"• Div. Amount: {self._factors['getDividendAmount']}\n" f"• Div. Change: {self._factors['getDividendChange']}\n" f"• Ex. Div. Date: {self._factors['getExDividendDate']}\n" f"• Pay Date: {self._factors['getPayDate']}" ), font=self._font(16), fill='white')
+                groups = [
+                    [
+                        ("52 Week High", f'${round(self._factors["get52wkHigh"],2)}'),
+                        ("52 Week Low", f'${round(self._factors["get52wkLow"],2)}'),
+                        ("Volume", Humanizer.suffix(self._factors["getVolume"])),
+                        ("Avg Volume", Humanizer.suffix(self._factors["getAvgVolume"])),
+                        ("Market Cap", Humanizer.suffix(self._factors["getMktCap"]))
+                    ],
+                    [
+                        ("P/E Ratio", round(self._factors["getPERatio"], 2)),
+                        ("EPS Ratio", round(self._factors["getEPSRatio"], 2)),
+                        ("Beta", round(self._factors["getBeta"], 2)),
+                        ("Annual Yield", f'{round(self._factors["getAnnualYield"], 2)}%'),
+                        ("Monthly Yield", f'{round(self._factors["getMonthlyYield"], 2)}%')
+                    ],
+                    [
+                        ("Div. Amount", self._factors['getDividendAmount']),
+                        ("Div. Change", self._factors['getDividendChange']),
+                        ("Ex Div. Date", self._factors['getExDividendDate']),
+                        ("Pay Date", self._factors['getPayDate'])
+                    ]
+                ]
+
+                startX = 1750
+                columnWidths = []
+                for group in groups:
+                    maxW = 0
+                    for label, val in group:
+                        fullStr = f"• {label}: {val}"
+                        try: w = draw.textlength(fullStr, font=self._font(16))
+                        except AttributeError: w = self._font(16).getsize(fullStr)[0]
+                        maxW = max(maxW, w)
+                    columnWidths.append(maxW + 40)
+
+                currentX = startX
+                for group_idx, group in enumerate(groups):
+                    for row_idx, (label, val) in enumerate(group):
+                        posY = 84 + row_idx * 20
+                        labelText = f"• {label}: "
+                        valText = str(val)
+                        
+                        draw.text((currentX, posY), labelText, font=self._font(16), fill='white')
+                        try: lw = draw.textlength(labelText, font=self._font(16))
+                        except AttributeError: lw = self._font(16).getsize(labelText)[0]
+                        
+                        draw.text((currentX + lw, posY), valText, font=self._font(16), fill=themes.brand)
+                    
+                    currentX += columnWidths[group_idx]
 
         buf = io.BytesIO()
         finalImg.save(buf, format="PNG")
