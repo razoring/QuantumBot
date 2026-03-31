@@ -306,6 +306,31 @@ class Charts:
         'basic-materials': 'XLB',
         'communication-services': 'XLC'
     }
+    _MACRO_MAP = {
+        'rates': '^TNX',
+        'energy': 'CL=F',
+        'economy': '^GSPC'
+    }
+    _MACRO_CORRELATIONS = {
+        'rates': {
+            'financial-services': 1,
+            'technology': -1,
+            'real-estate': -1,
+            'utilities': -1,
+            'healthcare': -0.5,
+            'default': -1
+        },
+        'energy': {
+            'energy': 1,
+            'basic-materials': 0.5,
+            'consumer-cyclical': -1,
+            'industrials': -1,
+            'default': -0.5
+        },
+        'economy': {
+            'default': 1
+        }
+    }
 
     def __init__(self):
         self._TTL = 60*60*24
@@ -325,7 +350,6 @@ class Charts:
             lastDate = history.index[locs[0]]
         else: lastDate = today
         
-        # ... (rest of holidays and curPrice logic remains same)
         holidays = []
 
         try:
@@ -726,19 +750,46 @@ class Charts:
                 
                 # Composite behavioural score (-100% to +100%)
                 # Institutions: 0% to 100% -> 0.0 to 0.5
-                inst_score = inst_held * 0.5
+                inst_score = (inst_held if inst_held is not None else 0.0) * 0.5
                 # Short Interest: 0% to 20% -> 0.0 to -0.4
-                short_score = max(short_float * -2.0, -0.4)
+                short_score = max((short_float if short_float is not None else 0.0) * -2.0, -0.4)
                 # Insiders: 0% to 5% -> 0.0 to 0.1
-                insider_score = min(insider_held * 2.0, 0.1)
+                insider_score = min((insider_held if insider_held is not None else 0.0) * 2.0, 0.1)
                 
                 total_behavioural_score = inst_score + short_score + insider_score
                 behavioural_pct = np.linspace(0, total_behavioural_score, forward + 1)
             except Exception: pass
 
+            # 5. Macro Component (5% Weight)
+            macro_pct = np.zeros(forward + 1)
+            macro_impacts = {}
+            try:
+                if userID: STATUS_REGISTRY[userID] = "Analyzing Macro Currents..."
+                info = stock.info
+                sector_key = info.get("sectorKey", "").lower()
+                
+                for key, symbol in self._MACRO_MAP.items():
+                    m_ticker = yf.Ticker(symbol)
+                    m_hist = m_ticker.history(period="6mo", interval="1d")
+                    m_hist = m_hist.resample("D").interpolate(method="linear").ffill().bfill()
+                    if not m_hist.empty:
+                        start_date_3mo = lastDate - timedelta(days=90)
+                        target_idx = m_hist.index.get_indexer([start_date_3mo], method='pad')[0]
+                        past_val = float(m_hist.iloc[target_idx]["Close"])
+                        current_val = float(m_hist["Close"].iloc[-1])
+                        total_gain = (current_val / past_val) - 1
+                        
+                        # Sector-aware dynamic correlation
+                        correlation_map = self._MACRO_CORRELATIONS.get(key, {})
+                        impact_dir = correlation_map.get(sector_key, correlation_map.get('default', 1))
+                        
+                        macro_impacts[key] = {'val': total_gain * 100, 'dir': impact_dir}
+                        macro_pct += np.linspace(0, total_gain * impact_dir, forward + 1) / len(self._MACRO_MAP)
+            except Exception: pass
+
             # Final Blend
-            # Final_Delta = (0.80 * Ticker) + (0.10 * Sector) + (0.05 * Analyst) + (0.05 * Behavioural)
-            final_pct_curve = (0.80 * ticker_pct) + (0.10 * sector_pct) + (0.05 * analyst_pct) + (0.05 * behavioural_pct)
+            # Final_Delta = (0.75 * Ticker) + (0.10 * Sector) + (0.05 * Macro) + (0.05 * Analyst) + (0.05 * Behavioural)
+            final_pct_curve = (0.75 * ticker_pct) + (0.10 * sector_pct) + (0.05 * macro_pct) + (0.05 * analyst_pct) + (0.05 * behavioural_pct)
             prophetTrend = prophetTrend[0] * (1 + final_pct_curve)
             # ------------------------------------------------
             
@@ -861,7 +912,33 @@ class Charts:
                     "impact": {"symbol": themes.arrowUp if insider_held > 0.02 else themes.mixed, "pct": f"{abs(insider_impact):.1f}%", "color": themes.brand if insider_held > 0.02 else themes.yellow, "val": insider_impact * 0.01},
                     "label": f"Held by Insiders [{round(insider_held*100)}%]"
                 })
+
+            # Macro Factors
+            for key, data in macro_impacts.items():
+                val = data['val']
+                impact_dir = data['dir']
+                real_impact = val * impact_dir * 0.05 # 5% weight
+                
+                color = themes.brand if real_impact > 0 else (themes.red if real_impact < 0 else themes.yellow)
+                symbol = themes.arrowUp if real_impact > 0 else (themes.arrowDown if real_impact < 0 else themes.mixed)
+                
+                label_map = {'rates': 'Interest Rates', 'energy': 'Energy Costs', 'economy': 'Market Momentum'}
+                base_label = label_map.get(key, key)
+                ticker_label = self._MACRO_MAP.get(key, "")
+                
+                # Dynamic Labeling: Tailwind vs Headwind
+                if impact_dir > 0:
+                    status = "Tailwind" if val > 0 else "Headwind"
+                else:
+                    status = "Headwind" if val > 0 else "Tailwind"
+                    
+                factors.append({
+                    "impact": {"symbol": symbol, "pct": f"{abs(real_impact):.1f}%", "color": color, "val": real_impact * 0.01},
+                    "label": f"{base_label} {status} [{ticker_label}]"
+                })
         except Exception: pass
+        
+        factors = [f for f in factors if not (isinstance(f, dict) and f.get("impact", {}).get("pct") in ["0.0%", "0%"])]
 
         chartBuf = self._buffer(fig)
         if userID: STATUS_REGISTRY[userID] = "Finalizing Image..."

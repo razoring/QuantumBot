@@ -4,6 +4,7 @@ Assign verified role via bot
 Fix feedback loop
 
 TBD SOON:
+Proper Recession Implementation
 Polymarket data
 Implementation of the AI
 More in-depth telemetry
