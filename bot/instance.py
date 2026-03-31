@@ -11,6 +11,7 @@ _intents = discord.Intents.default()
 _intents.message_content = True
 _intents.guilds = True
 _intents.invites = True
+_intents.members = True
 
 class QuantumBot(commands.Bot):
     def __init__(self):
@@ -24,6 +25,18 @@ class QuantumBot(commands.Bot):
         totalUsers = sum(g.member_count for g in self.guilds)
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         print(f"Total Users: {totalUsers}")
+
+        from cogs.robot import ServerAccess, VERIFY_CHANNEL_ID
+        channel = self.get_channel(VERIFY_CHANNEL_ID)
+        if channel:
+            try:
+                await channel.purge()
+                embed = discord.Embed(color=discord.Colour.teal(), title="Server Access")
+                embed.description = "## Getting Started\nClick the button below to register your account and access the private channels."
+                await channel.send(embed=embed, view=ServerAccess())
+            except Exception as e:
+                print(f"Failed to send startup message: {e}")
+
         if not self._updateStatus.is_running():
             self._updateStatus.start()
 

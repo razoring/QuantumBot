@@ -35,6 +35,9 @@ BOT_ICON = "bot/assets/icons/quantum.png"
 humanizer = functions.Humanizer()
 git = Github(auth=Auth.Token(GIT))
 
+VERIFY_CHANNEL_ID = 1488666182985977986
+ACCESS_ROLE_ID = 1482476984159436800
+
 def getVersion():
     RELEASE = 1
     try:
@@ -197,12 +200,14 @@ class Robot(commands.Cog):
         if self._registered(interaction.user.id) and bypass==False:
             return True
 
-        error = "## Getting Started\n**You must have a registered account before accessing our services.**\nPlease take a few minutes to read our Terms of Service and Privacy Policy.\nYou can review these documents using the buttons below.\n\nMake a selection from the two menus presented:**\n1. Confirm marketing communication preferences.\n2. Confirm that you have read, understand, and agree to our EULA.**"
+        embed = discord.Embed(color=discord.Colour.teal(), title="401: Unauthorized")
+        embed.description = "## Getting Started\n**You must have a registered account before accessing our services.**\nPlease take a few minutes to read our Terms of Service and Privacy Policy.\nYou can review these documents using the buttons below.\n\nMake a selection from the two menus presented:**\n1. Confirm marketing communication preferences.\n2. Confirm that you have read, understand, and agree to our EULA.**"
+        
         try:
-            if interaction.response.is_done(): await interaction.followup.send(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
-            else: await interaction.response.send_message(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            if interaction.response.is_done(): await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            else: await interaction.response.send_message(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
         except Exception:
-            try: await interaction.followup.send(error, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+            try: await interaction.followup.send(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
             except Exception: pass
 
         loop = asyncio.get_running_loop()
@@ -539,6 +544,52 @@ class Robot(commands.Cog):
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
+class ServerAccess(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Verify", style=discord.ButtonStyle.blurple, custom_id="verify_server_access")
+    async def verify_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        user = functions.User(interaction.user.id)
+        if user.accountFromDiscord() is not None:
+            # Assign role
+            role = interaction.guild.get_role(ACCESS_ROLE_ID)
+            if role:
+                try:
+                    await interaction.user.add_roles(role)
+                    embed = discord.Embed(color=discord.Colour.teal(), title="Verification Successful")
+                    embed.description = "## Welcome Back\nYou already have a registered account! You have been granted access to channels."
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                except Exception as e:
+                    traceback.print_exc()
+                    embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
+                    embed.description = "Sorry, an error occurred while assigning your role. Please contact support if the issue persists."
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                embed = discord.Embed(color=discord.Colour.teal(), title="404: Not Found")
+                embed.description = "Critical Error: The access role was not found in this guild. Please contact the server administrator."
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+
+        embed = discord.Embed(color=discord.Colour.teal(), title="401: Unauthorized")
+        embed.description = "## Getting Started\n**You must have a registered account before accessing our services.**\nPlease take a few minutes to read our Terms of Service and Privacy Policy.\nYou can review these documents using the buttons below.\n\nMake a selection from the two menus presented:**\n1. Confirm marketing communication preferences.\n2. Confirm that you have read, understand, and agree to our EULA.**"
+        
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+        REGISTRATIONS[interaction.user.id] = fut
+        
+        await interaction.response.send_message(embed=embed, view=RegisterPrompt(interaction.user.id), ephemeral=True)
+
+        try:
+            await asyncio.wait_for(fut, timeout=300)
+        except asyncio.TimeoutError:
+            REGISTRATIONS.pop(interaction.user.id, None)
+            try:
+                timeoutEmbed = discord.Embed(color=discord.Colour.teal(), title="408: Registration Timeout")
+                timeoutEmbed.description = "Registration timed out. Please try again."
+                await interaction.followup.send(embed=timeoutEmbed, ephemeral=True)
+            except Exception: pass
+
 class RegisterPrompt(discord.ui.View):
     def __init__(self, user_id):
         super().__init__(timeout=300)
@@ -609,9 +660,17 @@ class RegisterPrompt(discord.ui.View):
 
         user = functions.User(self.user_id)
         if user.createAccount(marketing=self.marketing):
+            # Assign role
+            if interaction.guild:
+                role = interaction.guild.get_role(ACCESS_ROLE_ID)
+                if role:
+                    try:
+                        await interaction.user.add_roles(role)
+                    except Exception: pass
+
             if fut and not fut.done(): fut.set_result(True)
-            embed = discord.Embed(color=discord.Colour.teal(), title="Registration Successful")
-            embed.description = "Welcome! Your account is now active. You can use all forecasting tools."
+            embed = discord.Embed(color=discord.Colour.teal(), title="Account Creation Successful")
+            embed.description = "## Welcome to QuantumBot\nYour account has been successfully created. You have been granted full access to our forecasting tools and private channels."
             await interaction.response.edit_message(embed=embed, view=None)
         else:
             if fut and not fut.done(): fut.set_result(False)

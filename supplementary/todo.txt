@@ -1,8 +1,8 @@
 IMPORTANT:
-Generate graph variations
 Assign verified role via bot
 
 TBD SOON:
+Generate graph variations
 Proper Recession Implementation
 Polymarket data
 Implementation of the AI
