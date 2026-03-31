@@ -673,9 +673,7 @@ class Charts:
         # Parse lookback
         try:
             if lookback_str == "ytd":
-                now = datetime.now()
-                lookback = (now - datetime(now.year, 1, 1)).days
-                if lookback < 7: lookback = 365 # Default to full year if early Jan
+                lookback = 365
             else:
                 lookback = int(lookback_str.lower().replace("d",""))
         except:
