@@ -669,6 +669,7 @@ class Charts:
     def project(self, ticker, model, serverName, serverInvite, serverIcon, userID):
         recordRequest(userID, ticker)
         forward = 90
+        lookback = 90 
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
         history = stock.history(period="5y", interval="1d") if model != 0 else stock.history(period="1wk")
@@ -677,7 +678,7 @@ class Charts:
         
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
-        plotHistory = history[history.index > lastDate - timedelta(days=14)]
+        plotHistory = history[history.index > lastDate - timedelta(days=60)]
         
         quantiles = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
         futureDays = np.arange(0, forward + 1)
@@ -744,7 +745,7 @@ class Charts:
 
             histories = {90: [bias[0], "D"], 180: [bias[1], "D"], 365: [bias[2], "D"], 730: [bias[3], "D"], 1825: [bias[4], "D"]}
             
-            startDate = lastDate - timedelta(days=90)
+            startDate = lastDate - timedelta(days=lookback)
             window = history[history.index <= startDate]
             actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward]
             
@@ -780,8 +781,8 @@ class Charts:
                     etf_hist = etf_ticker.history(period="6mo", interval="1d")
                     etf_hist = etf_hist.resample("D").interpolate(method="linear").ffill().bfill()
                     if not etf_hist.empty:
-                        start_date_3mo = lastDate - timedelta(days=90)
-                        target_idx = etf_hist.index.get_indexer([start_date_3mo], method='pad')[0]
+                        start_date_lookback = lastDate - timedelta(days=lookback)
+                        target_idx = etf_hist.index.get_indexer([start_date_lookback], method='pad')[0]
                         past_price = float(etf_hist.iloc[target_idx]["Close"])
                         current_price = float(etf_hist["Close"].iloc[-1])
                         total_sector_gain = (current_price / past_price) - 1
@@ -796,8 +797,34 @@ class Charts:
                 'sell': -0.5, 'strong_sell': -1.0
             }
             try:
-                analyst_rating = stock.info.get("recommendationKey", "none").lower()
-                rating_score = rating_map.get(analyst_rating, 0.0)
+                # Use historical recommendations if available for the lookback window
+                recs = stock.recommendations
+                used_historical = False
+                if recs is not None and not recs.empty:
+                    # Calculate months needed based on the lookback variable
+                    months_needed = math.ceil(lookback / 30)
+                    window_recs = recs.iloc[:months_needed]
+                    
+                    # Compute weighted sentiment score across all periods in the window
+                    period_sums = window_recs[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']].sum()
+                    total_ratings = period_sums.sum()
+                    
+                    if total_ratings > 0:
+                        score = (
+                            period_sums['strongBuy'] * 1.0 +
+                            period_sums['buy'] * 0.5 +
+                            period_sums['hold'] * 0.0 +
+                            period_sums['sell'] * -0.5 +
+                            period_sums['strongSell'] * -1.0
+                        ) / total_ratings
+                        rating_score = score
+                        analyst_rating = "historical consensus"
+                        used_historical = True
+
+                if not used_historical:
+                    analyst_rating = stock.info.get("recommendationKey", "none").lower()
+                    rating_score = rating_map.get(analyst_rating, 0.0)
+                
                 if rating_score != 0.0:
                     analyst_pct = np.linspace(0, rating_score, forward + 1)
             except Exception: pass
@@ -834,8 +861,8 @@ class Charts:
                     m_hist = m_ticker.history(period="6mo", interval="1d")
                     m_hist = m_hist.resample("D").interpolate(method="linear").ffill().bfill()
                     if not m_hist.empty:
-                        start_date_3mo = lastDate - timedelta(days=90)
-                        target_idx = m_hist.index.get_indexer([start_date_3mo], method='pad')[0]
+                        start_date_lookback = lastDate - timedelta(days=lookback)
+                        target_idx = m_hist.index.get_indexer([start_date_lookback], method='pad')[0]
                         past_val = float(m_hist.iloc[target_idx]["Close"])
                         current_val = float(m_hist["Close"].iloc[-1])
                         total_gain = (current_val / past_val) - 1
