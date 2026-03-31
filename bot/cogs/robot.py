@@ -28,12 +28,12 @@ GIT = os.getenv("GIT_TOKEN")
 
 # map of discord user id -> asyncio.Future used to await registration results
 REGISTRATIONS: dict[int, asyncio.Future] = {}
-models = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
+MODELS = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 BOT_INVITE = "IN BETA"
 BOT_ICON = "bot/assets/icons/quantum.png"
 
-humanizer = functions.Humanizer()
-git = Github(auth=Auth.Token(GIT))
+HUMANIZER = functions.Humanizer()
+gitClient = Github(auth=Auth.Token(GIT))
 
 VERIFY_CHANNEL_ID = 1488666182985977986
 ACCESS_ROLE_ID = 1482476984159436800
@@ -41,7 +41,7 @@ ACCESS_ROLE_ID = 1482476984159436800
 def getVersion():
     RELEASE = 1
     try:
-        user = git.get_user()
+        user = gitClient.get_user()
         commits = user.get_repo("RICH").get_commits().totalCount
         return RELEASE + commits/1000
     except:
@@ -90,15 +90,15 @@ def infoEmbed(info: any, ticker: str, static: dict):
 class Robot(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.check_alerts.start()
-        self.train_popular.start()
+        self.checkAlerts.start()
+        self.trainPopular.start()
 
-    def cog_unload(self):
-        self.check_alerts.cancel()
-        self.train_popular.cancel()
+    def cogUnload(self):
+        self.checkAlerts.cancel()
+        self.trainPopular.cancel()
 
     @tasks.loop(minutes=1)
-    async def check_alerts(self):
+    async def checkAlerts(self):
         try:
             alerts = functions.getAllAlerts()
             if not alerts: return
@@ -128,7 +128,7 @@ class Robot(commands.Cog):
             traceback.print_exc()
 
     @tasks.loop(hours=24)
-    async def train_popular(self):
+    async def trainPopular(self):
         now = datetime.datetime.now()
         if now.weekday() != 5:
             return
@@ -137,28 +137,28 @@ class Robot(commands.Cog):
             with functions.DB_LOCK:
                 with functions.DB_CONNECTION.cursor() as cursor:
                     window = int((datetime.datetime.now() - datetime.timedelta(days=14)).timestamp())
-                    cursor.execute("SELECT COUNT(DISTINCT ticker) FROM Request WHERE CAST(updated AS BIGINT) >= %s", (week_ago,))
+                    cursor.execute("SELECT COUNT(DISTINCT ticker) FROM Request WHERE CAST(updated AS BIGINT) >= %s", (window,))
                     row = cursor.fetchone()
                     if not row or row[0] == 0: return
-                    total_symbols = row[0]
-                    limit = max(1, int(total_symbols * 0.10))
+                    totalSymbols = row[0]
+                    limit = max(1, int(totalSymbols * 0.10))
                     
                     cursor.execute("""
-                        SELECT t.ticker, COUNT(r.id) as req_count 
+                        SELECT t.ticker, COUNT(r.id) as reqCount 
                         FROM Request r 
                         JOIN Ticker t ON t.id = r.ticker 
                         WHERE CAST(r.updated AS BIGINT) >= %s
                         GROUP BY t.ticker 
-                        ORDER BY req_count DESC 
+                        ORDER BY reqCount DESC 
                         LIMIT %s
                     """, (window, limit))
                     rows = cursor.fetchall()
             
-            tickers_to_train = [r[0] for r in rows if r[0]]
+            tickersToTrain = [r[0] for r in rows if r[0]]
             
-            if tickers_to_train:
+            if tickersToTrain:
                 charts = functions.Charts()
-                for ticker in tickers_to_train:
+                for ticker in tickersToTrain:
                     try:
                         await asyncio.to_thread(charts._liveTrain, ticker)
                     except Exception:
@@ -407,9 +407,9 @@ class Robot(commands.Cog):
     @app_commands.allowed_installs(guilds=True, users=True)
     @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm", lookback="Historical data window for analysis")
     @app_commands.choices(model=[
-        app_commands.Choice(name=models[0], value="0"),
-        app_commands.Choice(name=models[1], value="1"),
-        app_commands.Choice(name=models[2], value="2"),
+        app_commands.Choice(name=MODELS[0], value="0"),
+        app_commands.Choice(name=MODELS[1], value="1"),
+        app_commands.Choice(name=MODELS[2], value="2"),
         ])
     @app_commands.choices(lookback=[
         app_commands.Choice(name="Past 7 Days", value="7d"),
@@ -452,7 +452,7 @@ class Robot(commands.Cog):
 
             startTime = time.time()
 
-            async def loading_loop():
+            async def loadingLoop():
                 assets = [f for f in os.listdir("bot/assets/marketing") if f.endswith(('.png', '.jpg', '.jpeg'))]
                 while not task.done():
                     statusText = functions.STATUS_REGISTRY.get(interaction.user.id, "Processing...")
@@ -461,16 +461,16 @@ class Robot(commands.Cog):
                         e.description = statusText
                         if assets:
                             chosen = random.choice(assets)
-                            banner_file = discord.File(f"bot/assets/marketing/{chosen}", filename="banner.png")
+                            bannerFile = discord.File(f"bot/assets/marketing/{chosen}", filename="banner.png")
                             e.set_image(url="attachment://banner.png")
-                            await status.edit(embed=e, attachments=[banner_file])
+                            await status.edit(embed=e, attachments=[bannerFile])
                         else:
                             await status.edit(embed=e)
                     except Exception: pass
                     await asyncio.sleep(5)
 
             task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
-            loopTask = asyncio.create_task(loading_loop())
+            loopTask = asyncio.create_task(loadingLoop())
             img, predictedPrice = await task
             
             if img is None:
@@ -488,14 +488,14 @@ class Robot(commands.Cog):
 
             if img:
                 functions.STATUS_REGISTRY[interaction.user.id] = "Finalizing/Cleaning..."
-                img_copy = io.BytesIO(img.getvalue())
-                file = discord.File(img_copy, filename="output.png")
+                imgCopy = io.BytesIO(img.getvalue())
+                file = discord.File(imgCopy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy, serverName, inviteUrl, icon, selectedLookback)
+                feedbackView = Feedback(predictedPrice, ticker, selectedModel, imgCopy, serverName, inviteUrl, icon, selectedLookback)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
-                await interaction.followup.send(file=file, embed=embed, view=feedback_view)
+                await interaction.followup.send(file=file, embed=embed, view=feedbackView)
                 await status.delete()
         except Exception as e:
             traceback.print_exc()
@@ -548,7 +548,7 @@ class ServerAccess(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Verify", style=discord.ButtonStyle.blurple, custom_id="verify_server_access")
+    @discord.ui.button(label="Verify", style=discord.ButtonStyle.green, custom_id="verify_server_access")
     async def verify_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         user = functions.User(interaction.user.id)
         if user.accountFromDiscord() is not None:

@@ -548,17 +548,17 @@ class Charts:
                         rows = cursor.fetchall()
                     
                     if len(rows) >= 3:
-                        all_weights = []
+                        allWeights = []
                         for row in rows:
                             try:
-                                w_data = row[0]
-                                if isinstance(w_data, str): w_data = json.loads(w_data)
-                                if isinstance(w_data, list) and len(w_data) > 0:
-                                    all_weights.append(w_data[0])
+                                wData = row[0]
+                                if isinstance(wData, str): wData = json.loads(wData)
+                                if isinstance(wData, list) and len(wData) > 0:
+                                    allWeights.append(wData[0])
                             except: continue
                         
-                        if len(all_weights) >= 3:
-                            return np.mean(all_weights, axis=0).tolist()
+                        if len(allWeights) >= 3:
+                            return np.mean(allWeights, axis=0).tolist()
         except Exception: pass
         return [0.2, 0.2, 0.2, 0.2, 0.2]
 
@@ -579,8 +579,8 @@ class Charts:
                 row = cursor.fetchone()
                 
         if row is None:
-            avg_weights = self._getIndustryAverageWeights(ind, sector)
-            weight = [avg_weights, 0]
+            avgWeights = self._getIndustryAverageWeights(ind, sector)
+            weight = [avgWeights, 0]
         else:
             try: weight = self.clean(row[0])
             except Exception: weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
@@ -666,16 +666,16 @@ class Charts:
                 DB_CONNECTION.commit()
         return weights
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookback_str="90d"):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookbackStr="90d"):
         recordRequest(userID, ticker)
         forward = 90
         
         # Parse lookback
         try:
-            if lookback_str == "ytd":
+            if lookbackStr == "ytd":
                 lookback = 365
             else:
-                lookback = int(lookback_str.lower().replace("d",""))
+                lookback = int(lookbackStr.lower().replace("d",""))
         except:
             lookback = 90
 
@@ -748,8 +748,8 @@ class Charts:
                 info = stock.info
                 sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
                 ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
-                avg_weights = self._getIndustryAverageWeights(ind, sector)
-                bias = [avg_weights, 0]
+                avgWeights = self._getIndustryAverageWeights(ind, sector)
+                bias = [avgWeights, 0]
             bias = bias[0]
 
             histories = {90: [bias[0], "D"], 180: [bias[1], "D"], 365: [bias[2], "D"], 730: [bias[3], "D"], 1825: [bias[4], "D"]}
@@ -776,118 +776,118 @@ class Charts:
 
             # --- Integrated Weighted Ensemble (80/10/5/5) ---
             # 1. Ticker Component (80% Weight)
-            ticker_pct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
+            tickerPct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
             
             # 2. Sector Component (10% Weight)
-            sector_pct = np.zeros(forward + 1)
+            sectorPct = np.zeros(forward + 1)
             try:
                 info = stock.info
-                sector_key = info.get("sectorKey", "").lower()
-                etf = self._SECTOR_MAP.get(sector_key)
+                sectorKey = info.get("sectorKey", "").lower()
+                etf = self._SECTOR_MAP.get(sectorKey)
                 if etf:
                     if userID: STATUS_REGISTRY[userID] = f"Analyzing {etf} Sector Tide..."
-                    etf_ticker = yf.Ticker(etf)
-                    etf_hist = etf_ticker.history(period="6mo", interval="1d")
-                    etf_hist = etf_hist.resample("D").interpolate(method="linear").ffill().bfill()
-                    if not etf_hist.empty:
-                        start_date_lookback = lastDate - timedelta(days=lookback)
-                        target_idx = etf_hist.index.get_indexer([start_date_lookback], method='pad')[0]
-                        past_price = float(etf_hist.iloc[target_idx]["Close"])
-                        current_price = float(etf_hist["Close"].iloc[-1])
-                        total_sector_gain = (current_price / past_price) - 1
-                        sector_pct = np.linspace(0, total_sector_gain, forward + 1)
-                        sector_impact_pct = total_sector_gain * 100
+                    etfTicker = yf.Ticker(etf)
+                    etfHist = etfTicker.history(period="6mo", interval="1d")
+                    etfHist = etfHist.resample("D").interpolate(method="linear").ffill().bfill()
+                    if not etfHist.empty:
+                        startDateLookback = lastDate - timedelta(days=lookback)
+                        targetIdx = etfHist.index.get_indexer([startDateLookback], method='pad')[0]
+                        pastPrice = float(etfHist.iloc[targetIdx]["Close"])
+                        currentPrice = float(etfHist["Close"].iloc[-1])
+                        totalSectorGain = (currentPrice / pastPrice) - 1
+                        sectorPct = np.linspace(0, totalSectorGain, forward + 1)
+                        sectorImpactPct = totalSectorGain * 100
             except Exception: pass
 
             # 3. Analyst Component (5% Weight)
-            analyst_pct = np.zeros(forward + 1)
-            rating_map = {
+            analystPct = np.zeros(forward + 1)
+            ratingMap = {
                 'strong_buy': 1.0, 'buy': 0.5, 'hold': 0.0, 
                 'sell': -0.5, 'strong_sell': -1.0
             }
             try:
                 # Use historical recommendations if available for the lookback window
                 recs = stock.recommendations
-                used_historical = False
+                usedHistorical = False
                 if recs is not None and not recs.empty:
                     # Calculate months needed based on the lookback variable
-                    months_needed = math.ceil(lookback / 30)
-                    window_recs = recs.iloc[:months_needed]
+                    monthsNeeded = math.ceil(lookback / 30)
+                    windowRecs = recs.iloc[:monthsNeeded]
                     
                     # Compute weighted sentiment score across all periods in the window
-                    period_sums = window_recs[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']].sum()
-                    total_ratings = period_sums.sum()
+                    periodSums = windowRecs[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']].sum()
+                    totalRatings = periodSums.sum()
                     
-                    if total_ratings > 0:
+                    if totalRatings > 0:
                         score = (
-                            period_sums['strongBuy'] * 1.0 +
-                            period_sums['buy'] * 0.5 +
-                            period_sums['hold'] * 0.0 +
-                            period_sums['sell'] * -0.5 +
-                            period_sums['strongSell'] * -1.0
-                        ) / total_ratings
-                        rating_score = score
-                        analyst_rating = "historical consensus"
-                        used_historical = True
+                            periodSums['strongBuy'] * 1.0 +
+                            periodSums['buy'] * 0.5 +
+                            periodSums['hold'] * 0.0 +
+                            periodSums['sell'] * -0.5 +
+                            periodSums['strongSell'] * -1.0
+                        ) / totalRatings
+                        ratingScore = score
+                        analystRating = "historical consensus"
+                        usedHistorical = True
 
-                if not used_historical:
-                    analyst_rating = stock.info.get("recommendationKey", "none").lower()
-                    rating_score = rating_map.get(analyst_rating, 0.0)
+                if not usedHistorical:
+                    analystRating = stock.info.get("recommendationKey", "none").lower()
+                    ratingScore = ratingMap.get(analystRating, 0.0)
                 
-                if rating_score != 0.0:
-                    analyst_pct = np.linspace(0, rating_score, forward + 1)
+                if ratingScore != 0.0:
+                    analystPct = np.linspace(0, ratingScore, forward + 1)
             except Exception: pass
 
             # 4. Behavioural Component (5% Weight)
-            behavioural_pct = np.zeros(forward + 1)
+            behaviouralPct = np.zeros(forward + 1)
             try:
-                inst_held = stock.info.get("heldPercentInstitutions", 0.0)
-                short_float = stock.info.get("shortPercentOfFloat", 0.0)
-                insider_held = stock.info.get("heldPercentInsiders", 0.0)
+                instHeld = stock.info.get("heldPercentInstitutions", 0.0)
+                shortFloat = stock.info.get("shortPercentOfFloat", 0.0)
+                insiderHeld = stock.info.get("heldPercentInsiders", 0.0)
                 
                 # Composite behavioural score (-100% to +100%)
                 # Institutions: 0% to 100% -> 0.0 to 0.5
-                inst_score = (inst_held if inst_held is not None else 0.0) * 0.5
+                instScore = (instHeld if instHeld is not None else 0.0) * 0.5
                 # Short Interest: 0% to 20% -> 0.0 to -0.4
-                short_score = max((short_float if short_float is not None else 0.0) * -2.0, -0.4)
+                shortScore = max((shortFloat if shortFloat is not None else 0.0) * -2.0, -0.4)
                 # Insiders: 0% to 5% -> 0.0 to 0.1
-                insider_score = min((insider_held if insider_held is not None else 0.0) * 2.0, 0.1)
+                insiderScore = min((insiderHeld if insiderHeld is not None else 0.0) * 2.0, 0.1)
                 
-                total_behavioural_score = inst_score + short_score + insider_score
-                behavioural_pct = np.linspace(0, total_behavioural_score, forward + 1)
+                totalBehaviouralScore = instScore + shortScore + insiderScore
+                behaviouralPct = np.linspace(0, totalBehaviouralScore, forward + 1)
             except Exception: pass
 
             # 5. Macro Component (5% Weight)
-            macro_pct = np.zeros(forward + 1)
-            macro_impacts = {}
+            macroPct = np.zeros(forward + 1)
+            macroImpacts = {}
             try:
                 if userID: STATUS_REGISTRY[userID] = "Analyzing Macro Currents..."
                 info = stock.info
-                sector_key = info.get("sectorKey", "").lower()
+                sectorKey = info.get("sectorKey", "").lower()
                 
                 for key, symbol in self._MACRO_MAP.items():
-                    m_ticker = yf.Ticker(symbol)
-                    m_hist = m_ticker.history(period="6mo", interval="1d")
-                    m_hist = m_hist.resample("D").interpolate(method="linear").ffill().bfill()
-                    if not m_hist.empty:
-                        start_date_lookback = lastDate - timedelta(days=lookback)
-                        target_idx = m_hist.index.get_indexer([start_date_lookback], method='pad')[0]
-                        past_val = float(m_hist.iloc[target_idx]["Close"])
-                        current_val = float(m_hist["Close"].iloc[-1])
-                        total_gain = (current_val / past_val) - 1
+                    mTicker = yf.Ticker(symbol)
+                    mHist = mTicker.history(period="6mo", interval="1d")
+                    mHist = mHist.resample("D").interpolate(method="linear").ffill().bfill()
+                    if not mHist.empty:
+                        startDateLookback = lastDate - timedelta(days=lookback)
+                        targetIdx = mHist.index.get_indexer([startDateLookback], method='pad')[0]
+                        pastVal = float(mHist.iloc[targetIdx]["Close"])
+                        currentVal = float(mHist["Close"].iloc[-1])
+                        totalGain = (currentVal / pastVal) - 1
                         
                         # Sector-aware dynamic correlation
-                        correlation_map = self._MACRO_CORRELATIONS.get(key, {})
-                        impact_dir = correlation_map.get(sector_key, correlation_map.get('default', 1))
+                        correlationMap = self._MACRO_CORRELATIONS.get(key, {})
+                        impactDir = correlationMap.get(sectorKey, correlationMap.get('default', 1))
                         
-                        macro_impacts[key] = {'val': total_gain * 100, 'dir': impact_dir}
-                        macro_pct += np.linspace(0, total_gain * impact_dir, forward + 1) / len(self._MACRO_MAP)
+                        macroImpacts[key] = {'val': totalGain * 100, 'dir': impactDir}
+                        macroPct += np.linspace(0, totalGain * impactDir, forward + 1) / len(self._MACRO_MAP)
             except Exception: pass
 
             # Final Blend
             # Final_Delta = (0.75 * Ticker) + (0.10 * Sector) + (0.05 * Macro) + (0.05 * Analyst) + (0.05 * Behavioural)
-            final_pct_curve = (0.75 * ticker_pct) + (0.10 * sector_pct) + (0.05 * macro_pct) + (0.05 * analyst_pct) + (0.05 * behavioural_pct)
-            prophetTrend = prophetTrend[0] * (1 + final_pct_curve)
+            finalPctCurve = (0.75 * tickerPct) + (0.10 * sectorPct) + (0.05 * macroPct) + (0.05 * analystPct) + (0.05 * behaviouralPct)
+            prophetTrend = prophetTrend[0] * (1 + finalPctCurve)
             # ------------------------------------------------
             
             if model == 1:
@@ -967,57 +967,57 @@ class Charts:
         try:
             # Industry Trend [ETF] (10% weight)
             info = stock.info
-            sector_key = info.get("sectorKey", "").lower()
-            etf = self._SECTOR_MAP.get(sector_key)
-            if etf and 'sector_impact_pct' in locals():
-                color = themes.brand if sector_impact_pct > 0 else themes.red
-                symbol = themes.arrowUp if sector_impact_pct > 0 else themes.arrowDown
+            sectorKey = info.get("sectorKey", "").lower()
+            etf = self._SECTOR_MAP.get(sectorKey)
+            if etf and 'sectorImpactPct' in locals():
+                color = themes.brand if sectorImpactPct > 0 else themes.red
+                symbol = themes.arrowUp if sectorImpactPct > 0 else themes.arrowDown
                 factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(sector_impact_pct * 0.1):.1f}%", "color": color, "val": sector_impact_pct * 0.001},
+                    "impact": {"symbol": symbol, "pct": f"{abs(sectorImpactPct * 0.1):.1f}%", "color": color, "val": sectorImpactPct * 0.001},
                     "label": f"Industry Trend [{etf}]"
                 })
 
             # Analyst Rating [Status] (5% weight)
-            if 'analyst_rating' in locals() and analyst_rating != 'none':
-                rating_score = rating_map.get(analyst_rating, 0.0)
-                impact_pct = rating_score * 5.0 # Max 5% impact
-                color = themes.brand if impact_pct > 0 else (themes.red if impact_pct < 0 else themes.yellow)
-                symbol = themes.arrowUp if impact_pct > 0 else (themes.arrowDown if impact_pct < 0 else themes.mixed)
-                formatted_rating = analyst_rating.replace('_', ' ').title()
+            if 'analystRating' in locals() and analystRating != 'none':
+                ratingScore = ratingMap.get(analystRating, 0.0)
+                impactPct = ratingScore * 5.0 # Max 5% impact
+                color = themes.brand if impactPct > 0 else (themes.red if impactPct < 0 else themes.yellow)
+                symbol = themes.arrowUp if impactPct > 0 else (themes.arrowDown if impactPct < 0 else themes.mixed)
+                formattedRating = analystRating.replace('_', ' ').title()
                 factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(impact_pct):.1f}%", "color": color, "val": impact_pct * 0.01},
-                    "label": f"Analyst Rating [{formatted_rating}]"
+                    "impact": {"symbol": symbol, "pct": f"{abs(impactPct):.1f}%", "color": color, "val": impactPct * 0.01},
+                    "label": f"Analyst Rating [{formattedRating}]"
                 })
 
             # Behavioural Factors (5% weight)
-            if 'total_behavioural_score' in locals():
+            if 'totalBehaviouralScore' in locals():
                 # Institutions
-                inst_impact = inst_held * 2.5 # 2.5% of total 5%
+                instImpact = instHeld * 2.5 # 2.5% of total 5%
                 factors.append({
-                    "impact": {"symbol": themes.mixed if inst_held < 0.5 else themes.arrowUp, "pct": f"{abs(inst_impact):.1f}%", "color": themes.brand if inst_held > 0.5 else themes.yellow, "val": inst_impact * 0.01},
-                    "label": ("Institutions Hold Majority" if inst_held > 0.5 else "Retail Traders Hold Majority")+f" [{round((inst_held if inst_held > 0.5 else (1-inst_held))*100)}%]"
+                    "impact": {"symbol": themes.mixed if instHeld < 0.5 else themes.arrowUp, "pct": f"{abs(instImpact):.1f}%", "color": themes.brand if instHeld > 0.5 else themes.yellow, "val": instImpact * 0.01},
+                    "label": ("Institutions Hold Majority" if instHeld > 0.5 else "Retail Traders Hold Majority")+f" [{round((instHeld if instHeld > 0.5 else (1-instHeld))*100)}%]"
                 })
                 # Short Interest
-                short_impact = short_score * 5.0 # Scales the 0 to -0.4 score back to 0 to -2%
+                shortImpact = shortScore * 5.0 # Scales the 0 to -0.4 score back to 0 to -2%
                 factors.append({
-                    "impact": {"symbol": themes.arrowDown if short_float > 0.1 else themes.mixed, "pct": f"{abs(short_impact):.1f}%", "color": themes.red if short_float > 0.1 else themes.yellow, "val": short_impact * 0.01},
-                    "label": f"Short Sentiment (Float) [{round(short_float*100)}%]"
+                    "impact": {"symbol": themes.arrowDown if shortFloat > 0.1 else themes.mixed, "pct": f"{abs(shortImpact):.1f}%", "color": themes.red if shortFloat > 0.1 else themes.yellow, "val": shortImpact * 0.01},
+                    "label": f"Short Sentiment (Float) [{round(shortFloat*100)}%]"
                 })
                 # Insider Movement
-                insider_impact = insider_score * 5.0
+                insiderImpact = insiderScore * 5.0
                 factors.append({
-                    "impact": {"symbol": themes.arrowUp if insider_held > 0.02 else themes.mixed, "pct": f"{abs(insider_impact):.1f}%", "color": themes.brand if insider_held > 0.02 else themes.yellow, "val": insider_impact * 0.01},
-                    "label": f"Held by Insiders [{round(insider_held*100)}%]"
+                    "impact": {"symbol": themes.arrowUp if insiderHeld > 0.02 else themes.mixed, "pct": f"{abs(insiderImpact):.1f}%", "color": themes.brand if insiderHeld > 0.02 else themes.yellow, "val": insiderImpact * 0.01},
+                    "label": f"Held by Insiders [{round(insiderHeld*100)}%]"
                 })
 
             # Macro Factors
-            for key, data in macro_impacts.items():
+            for key, data in macroImpacts.items():
                 val = data['val']
-                impact_dir = data['dir']
-                real_impact = val * impact_dir * 0.05 # 5% weight
+                impactDir = data['dir']
+                realImpact = val * impactDir * 0.05 # 5% weight
                 
-                color = themes.brand if real_impact > 0 else (themes.red if real_impact < 0 else themes.yellow)
-                symbol = themes.arrowUp if real_impact > 0 else (themes.arrowDown if real_impact < 0 else themes.mixed)
+                color = themes.brand if realImpact > 0 else (themes.red if realImpact < 0 else themes.yellow)
+                symbol = themes.arrowUp if realImpact > 0 else (themes.arrowDown if realImpact < 0 else themes.mixed)
                 
                 label_map = {'rates': 'Interest Rates', 'energy': 'Energy Costs', 'economy': 'Economic'}
                 base_label = label_map.get(key, key)
