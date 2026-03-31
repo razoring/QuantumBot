@@ -94,7 +94,7 @@ class Robot(commands.Cog):
         self.check_alerts.cancel()
         self.train_popular.cancel()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=1)
     async def check_alerts(self):
         try:
             alerts = functions.getAllAlerts()
