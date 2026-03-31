@@ -666,10 +666,21 @@ class Charts:
                 DB_CONNECTION.commit()
         return weights
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookback_str="90d"):
         recordRequest(userID, ticker)
         forward = 90
-        lookback = 90 
+        
+        # Parse lookback
+        try:
+            if lookback_str == "ytd":
+                now = datetime.now()
+                lookback = (now - datetime(now.year, 1, 1)).days
+                if lookback < 7: lookback = 365 # Default to full year if early Jan
+            else:
+                lookback = int(lookback_str.lower().replace("d",""))
+        except:
+            lookback = 90
+
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
         history = stock.history(period="5y", interval="1d") if model != 0 else stock.history(period="1wk")

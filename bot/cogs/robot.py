@@ -400,13 +400,21 @@ class Robot(commands.Cog):
     @app_commands.command(name="predict", description="Predicts future movements of a given ticker")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
-    @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm")
+    @app_commands.describe(ticker="The ticker symbol to predict (ex. AAPL)", model="Choose model algorithm", lookback="Historical data window for analysis")
     @app_commands.choices(model=[
         app_commands.Choice(name=models[0], value="0"),
         app_commands.Choice(name=models[1], value="1"),
         app_commands.Choice(name=models[2], value="2"),
-        app_commands.Choice(name=models[3], value="3")])
-    async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]]):
+        ])
+    @app_commands.choices(lookback=[
+        app_commands.Choice(name="Past 7 Days", value="7d"),
+        app_commands.Choice(name="Past 14 Days", value="14d"),
+        app_commands.Choice(name="Past Month (30d)", value="30d"),
+        app_commands.Choice(name="Past 3 Months (90d)", value="90d"),
+        app_commands.Choice(name="Past 6 Months (180d)", value="180d"),
+        app_commands.Choice(name="Past Year from Date (ytd)", value="ytd"),
+        ])
+    async def predict(self, interaction: discord.Interaction, ticker: str, model: typing.Optional[app_commands.Choice[str]], lookback: typing.Optional[app_commands.Choice[str]]):
         try:
             await interaction.response.defer(ephemeral=True)
             if await self.authenticated(interaction=interaction, bypass=False) == False: return
@@ -415,8 +423,9 @@ class Robot(commands.Cog):
                 return
             
             charts = functions.Charts()
+            selectedLookback = lookback.value if lookback else "90d"
 
-            embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction (3mo)")
+            embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction ({selectedLookback})")
             embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
             
             selectedModel = int(model.value) if model else 2
@@ -455,14 +464,14 @@ class Robot(commands.Cog):
                     except Exception: pass
                     await asyncio.sleep(5)
 
-            task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id))
+            task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
             loopTask = asyncio.create_task(loading_loop())
             img, predictedPrice = await task
             
             if img is None:
                 warning = True
                 functions.STATUS_REGISTRY[interaction.user.id] = "Using Extrapolation Model..."
-                task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id))
+                task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
                 img, predictedPrice = await task
 
             loopTask.cancel()
@@ -478,7 +487,7 @@ class Robot(commands.Cog):
                 file = discord.File(img_copy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy, serverName, inviteUrl, icon)
+                feedback_view = Feedback(predictedPrice, ticker, selectedModel, img_copy, serverName, inviteUrl, icon, selectedLookback)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(file=file, embed=embed, view=feedback_view)
@@ -624,7 +633,7 @@ class Update(discord.ui.View):
         await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
 class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon):
+    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d"):
         super().__init__(timeout=300)
         self.alertPrice = alertPrice
         self.ticker = alertTicker
@@ -633,6 +642,7 @@ class Feedback(discord.ui.View):
         self.serverName = serverName
         self.serverInvite = serverInvite
         self.serverIcon = serverIcon
+        self.lookback = lookback
         self._processing = False
         self._updateLabels()
 
@@ -672,7 +682,8 @@ class Feedback(discord.ui.View):
                     self.serverName, 
                     self.serverInvite, 
                     self.serverIcon,
-                    interaction.user.id
+                    interaction.user.id,
+                    self.lookback
                 )
                 
                 if img:
