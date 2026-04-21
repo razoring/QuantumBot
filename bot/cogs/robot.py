@@ -28,7 +28,7 @@ GIT = os.getenv("GIT_TOKEN")
 
 # map of discord user id -> asyncio.Future used to await registration results
 REGISTRATIONS: dict[int, asyncio.Future] = {}
-MODELS = ["Implied Volatility", "Extrapolation", "Aggregate-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
+MODELS = ["Implied Volatility", "Extrapolation", "Grounded-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 BOT_INVITE = "IN BETA"
 BOT_ICON = "bot/assets/icons/quantum.png"
 
