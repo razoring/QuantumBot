@@ -10,3 +10,7 @@ train.tar
 .DS_Store
 .venv/
 index/__pycache__
+/__pycache__/
+/__pycache__
+.pyc
+/bot/__pycache__/
