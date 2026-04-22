@@ -1024,13 +1024,13 @@ class Charts:
                 ticker_label = self._MACRO_MAP.get(key, "")
                 
                 # Dynamic Labeling: Tailwind vs Headwind
-                if impact_dir > 0:
+                if impactDir > 0:
                     status = "Tailwind" if val > 0 else "Headwind"
                 else:
                     status = "Headwind" if val > 0 else "Tailwind"
                     
                 factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(real_impact):.1f}%", "color": color, "val": real_impact * 0.01},
+                    "impact": {"symbol": symbol, "pct": f"{abs(realImpact):.1f}%", "color": color, "val": realImpact * 0.01},
                     "label": f"{base_label} {status} [{ticker_label}]"
                 })
         except Exception: pass
