@@ -143,10 +143,21 @@ class Stamp:
         finalImg.paste(chartImg, (50, 250), mask=chartImg)
         finalImg.paste(iconImg, (1045, 76), iconImg)
         if displayLegend:
-            blurZone = chartImg.crop(box=(18, 18, 150, 242)).filter(ImageFilter.GaussianBlur(8))
+            lx, ly = (24, 224)
+            lw, lh = legendOverlay.size
+            cx, cy = (50, 250)
+            
+            padding = 40
+            bx, by = lx + padding, ly + padding
+            bw, bh = lw - (padding * 2), lh - (padding * 2)
+            
+            x1, y1 = bx - cx, by - cy
+            x2, y2 = x1 + bw, y1 + bh
+            
+            blurZone = chartImg.crop(box=(x1, y1, x2, y2)).filter(ImageFilter.GaussianBlur(8))
             blurredMask = self._rounded(blurZone, 24)
-            finalImg.paste(blurredMask, (68, 269), mask=blurredMask)
-            finalImg.paste(legendOverlay, (24, 224), legendOverlay)
+            finalImg.paste(blurredMask, (bx, by), mask=blurredMask)
+            finalImg.paste(legendOverlay, (lx, ly), legendOverlay)
         finalImg.paste(mainTemplate, (0, 0), mainTemplate)
 
         draw = ImageDraw.Draw(im=finalImg)
