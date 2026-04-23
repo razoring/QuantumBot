@@ -30,7 +30,7 @@ GIT = os.getenv("GIT_TOKEN")
 REGISTRATIONS: dict[int, asyncio.Future] = {}
 MODELS = ["Implied Volatility", "Extrapolation", "Grounded-Extrapolation", "Logical Analysis [UNAVAILABLE]"]
 BOT_INVITE = "IN BETA"
-BOT_ICON = "bot/assets/icons/quantum.png"
+DEFAULT_ICON = "bot/assets/icons/discord.png"
 
 HUMANIZER = functions.Humanizer()
 gitClient = Github(auth=Auth.Token(GIT))
@@ -39,7 +39,7 @@ VERIFY_CHANNEL_ID = 1488666182985977986
 ACCESS_ROLE_ID = 1482476984159436800
 
 def getVersion():
-    RELEASE = 1
+    RELEASE = 2
     try:
         user = gitClient.get_user()
         commits = user.get_repo("RICH").get_commits().totalCount
@@ -70,16 +70,16 @@ def getStatic(info):
 def infoEmbed(info: any, ticker: str, static: dict):
     embed = discord.Embed(
         color=discord.Colour.teal(), 
-        title=f"{round(info.getCurrentPrice(),2)} ({humanizer.sign(round(info.getPriceChange(),2))}%)"
+        title=f"{round(info.getCurrentPrice(),2)} ({HUMANIZER.sign(round(info.getPriceChange(),2))}%)"
     )
     embed.set_author(name=f"{str.upper(ticker)}")
     embed.add_field(name=f"Open: {static.get('getDayOpen'):.2f}", value=f"Close*: {static.get('getDayClose'):.2f}", inline=True)
     embed.add_field(name=f"High: {info.getDayHigh():.2f}", value=f"Low: {info.getDayLow():.2f}", inline=True)
     embed.add_field(name=f"52W H: {static.get('get52wkHigh'):.2f}", value=f"52W L: {static.get('get52wkLow'):.2f}", inline=True)
 
-    embed.add_field(name=f"Volume: {humanizer.suffix(static.get('getVolume'))}", value=f"Avg Volume: {humanizer.suffix(static.get('getAvgVolume'))}", inline=True)
+    embed.add_field(name=f"Volume: {HUMANIZER.suffix(static.get('getVolume'))}", value=f"Avg Volume: {HUMANIZER.suffix(static.get('getAvgVolume'))}", inline=True)
     embed.add_field(name=f"P/E: {static.get('getPERatio'):.2f}", value=f"EPS: {static.get('getEPSRatio'):.2f}", inline=True)
-    embed.add_field(name=f"Beta: {static.get('getBeta'):.2f}", value=f"Mkt Cap: {humanizer.suffix(static.get('getMktCap'))}", inline=True)
+    embed.add_field(name=f"Beta: {static.get('getBeta'):.2f}", value=f"Mkt Cap: {HUMANIZER.suffix(static.get('getMktCap'))}", inline=True)
 
     embed.add_field(name=f"Annual Yield: {static.get('getAnnualYield')}%", value=f"Monthly Yield: {static.get('getMonthlyYield')}%", inline=True)
     embed.add_field(name=f"Ex. Div.: {static.get('getExDividendDate')}", value=f"Div. Payout: {static.get('getPayDate')}")
@@ -321,11 +321,11 @@ class Robot(commands.Cog):
             
             if interaction.guild:
                 invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else BOT_ICON
+                icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
                 serverName = interaction.guild.name
                 inviteUrl = invite.url
             else:
-                icon = BOT_ICON
+                icon = DEFAULT_ICON
                 serverName = "QuantumBot"
                 inviteUrl = BOT_INVITE
 
@@ -438,11 +438,11 @@ class Robot(commands.Cog):
 
             if interaction.guild:
                 invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else BOT_ICON
+                icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
                 serverName = interaction.guild.name
                 inviteUrl = invite.url
             else:
-                icon = BOT_ICON
+                icon = DEFAULT_ICON
                 serverName = "QuantumBot"
                 inviteUrl = BOT_INVITE
 
@@ -471,13 +471,13 @@ class Robot(commands.Cog):
 
             task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
             loopTask = asyncio.create_task(loadingLoop())
-            img, predictedPrice = await task
+            img, (predictedPrice, weights) = await task
             
             if img is None:
                 warning = True
                 functions.STATUS_REGISTRY[interaction.user.id] = "Using Extrapolation Model..."
                 task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, 1, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
-                img, predictedPrice = await task
+                img, (predictedPrice, weights) = await task
 
             loopTask.cancel()
             functions.STATUS_REGISTRY.pop(interaction.user.id, None)
@@ -492,7 +492,7 @@ class Robot(commands.Cog):
                 file = discord.File(imgCopy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedbackView = Feedback(predictedPrice, ticker, selectedModel, imgCopy, serverName, inviteUrl, icon, selectedLookback)
+                feedbackView = Feedback(predictedPrice, ticker, selectedModel, imgCopy, serverName, inviteUrl, icon, selectedLookback, currentWeights=weights)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(file=file, embed=embed, view=feedbackView)
@@ -692,7 +692,7 @@ class Update(discord.ui.View):
         await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
 class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d"):
+    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d", currentWeights=None):
         super().__init__(timeout=300)
         self.alertPrice = alertPrice
         self.ticker = alertTicker
@@ -702,11 +702,12 @@ class Feedback(discord.ui.View):
         self.serverInvite = serverInvite
         self.serverIcon = serverIcon
         self.lookback = lookback
+        self.currentWeights = currentWeights
         self._processing = False
         self._updateLabels()
 
     def _updateLabels(self):
-        likes, dislikes, _ = functions.getTickerFeedback(self.ticker)
+        likes, dislikes = functions.getTickerFeedback(self.ticker)
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 if child.custom_id == "LikeButton":
@@ -727,14 +728,17 @@ class Feedback(discord.ui.View):
             await interaction.response.send_message(embed=confirmEmbed, ephemeral=True)
             originalMessage = interaction.message
 
-            await asyncio.to_thread(functions.recordPredictionFeedback, self.ticker, rating)
+            await asyncio.to_thread(functions.recordPredictionFeedback, self.ticker, rating, self.currentWeights)
             
             if rating == "👎":
                 if originalMessage:
                     await originalMessage.edit(view=None)
 
+                # Mutate weights locally for the session
+                mutatedWeights = await asyncio.to_thread(functions.mutateWeights, self.ticker, self.currentWeights)
+
                 charts = functions.Charts()
-                img, predictedPrice = await asyncio.to_thread(
+                img, (predictedPrice, newWeights) = await asyncio.to_thread(
                     charts.project, 
                     self.ticker, 
                     self.model, 
@@ -742,12 +746,14 @@ class Feedback(discord.ui.View):
                     self.serverInvite, 
                     self.serverIcon,
                     interaction.user.id,
-                    self.lookback
+                    self.lookback,
+                    overriddenWeights=mutatedWeights
                 )
                 
                 if img:
                     self.file = io.BytesIO(img.getvalue())
                     self.alertPrice = predictedPrice
+                    self.currentWeights = newWeights
 
                 self._updateLabels()
                 

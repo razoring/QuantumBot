@@ -32,6 +32,7 @@ import os
 
 # System Config
 matplotlib.use("Agg")
+logging.getLogger("prophet.plot").disabled = True
 logging.getLogger("prophet").setLevel(logging.WARNING)
 logging.getLogger("cmdstanpy").disabled = True
 set_default_font(load_google_font("Montserrat", weight="bold"))
@@ -88,13 +89,17 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
 
         rawSigma = np.nan_to_num(rawSigma, nan=curPrice*0.02, posinf=curPrice*0.02, neginf=curPrice*0.02)
 
+        # Extract deltas and changepoints
+        deltas = config.params['delta'].mean(axis=0)
+        cp_dates = config.changepoints.values
+        
         if len(rawTrend) > 0: curve = rawTrend + (curPrice - rawTrend[0])
         else: curve = np.full(forward, curPrice)
         
         if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
-        return h, (curve, rawSigma)
+        return h, (curve, rawSigma, deltas, cp_dates)
     except Exception:
-        return h, (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
+        return h, (np.full(forward, curPrice), np.full(forward, curPrice * 0.02), np.zeros(params['inflections']), np.array([]))
 
 class Stamp:
     def __init__(self, name, url, icon, styles, factors):
@@ -396,7 +401,7 @@ class Charts:
     def __init__(self):
         self._TTL = 60*60*24
         self._INFLECTIONS = 15
-        self._FLEXIBILITY = 0.015
+        self._FLEXIBILITY = 0.08
         self._RANGE = 0.9
         self._SAMPLES = 1500
         self._SEASONALITY = 0.05
@@ -467,19 +472,21 @@ class Charts:
             window = window.resample("D").interpolate(method="linear").ffill().bfill()
             
             if len(window) < 50:
-                resultsMap[h] = (np.full(forward, curPrice), np.full(forward, curPrice * 0.02))
+                resultsMap[h] = (np.full(forward, curPrice), np.full(forward, curPrice * 0.02), (np.zeros(prophetParams['inflections']), np.array([])))
                 continue
             
             # Include weight values in cache key to ensure mutation changes the chart
             weightValues = tuple([settings[0] for settings in configs.values()])
-            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), weightValues, "LOGISTIC_V5")
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), weightValues, "LOGISTIC_V6")
             with self._CACHE_LOCK:
                 cached = self._CACHE.get(key)
                 if cached is not None:
                     timestamp, val = cached
                     if time.time() - timestamp < self._TTL:
-                        resultsMap[h] = val
-                        continue
+                        # Ensure the cached value matches the new 3-tuple signature
+                        if len(val) == 3:
+                            resultsMap[h] = val
+                            continue
 
             data = window.reset_index()[["Date", "Close"]].rename(columns={"Date": "ds", "Close": "y"})
             data["ds"] = data["ds"].dt.tz_localize(None)
@@ -495,30 +502,24 @@ class Charts:
             if parallel:
                 futures = [_PROCESS_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
                 for i, future in enumerate(as_completed(futures)):
-                    hRes, (curve, sigma) = future.result()
-                    resultsMap[hRes] = (curve, sigma)
+                    hRes, (curve, sigma, deltas, cp_dates) = future.result()
+                    resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
                     originalKey = next((t[8] for t in tasks if t[0] == hRes), None)
                     if originalKey:
                         with self._CACHE_LOCK:
-                            self._CACHE[originalKey] = (time.time(), (curve, sigma))
+                            self._CACHE[originalKey] = (time.time(), (curve, sigma, (deltas, cp_dates)))
             else:
                 for t in tasks:
-                    hRes, (curve, sigma) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])
-                    resultsMap[hRes] = (curve, sigma)
+                    hRes, (curve, sigma, deltas, cp_dates) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])
+                    resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
                     with self._CACHE_LOCK:
-                        self._CACHE[t[8]] = (time.time(), (curve, sigma))
-
-        with self._CACHE_LOCK:
-            if len(self._CACHE) > self._CAPACITY:
-                # Basic eviction logic for dict
-                keys = list(self._CACHE.keys())
-                for i in range(len(keys) - self._CAPACITY):
-                    del self._CACHE[keys[i]]
+                        self._CACHE[t[8]] = (time.time(), (curve, sigma, (deltas, cp_dates)))
 
         finalResults = [resultsMap[h] for h in configs.keys()]
         curves = np.vstack([r[0] for r in finalResults])
         sigmas = np.vstack([r[1] for r in finalResults])
-        return (curves, sigmas)
+        insights = [r[2] for r in finalResults]
+        return (curves, sigmas, insights)
 
     def _smapeLoss(self, w, raw, actuals):
         preds = np.dot(w, raw)
@@ -603,7 +604,7 @@ class Charts:
             biasConfigs = {90:[bestWeight[0], "D"], 180:[bestWeight[1], "D"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "D"], 1825:[bestWeight[4], "D"]}
             res = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=True, uncertaintySamples=0)
             if res is None: return None
-            rawCurves, rawSigmas = res
+            rawCurves, rawSigmas, _ = res
             
             targetDates = [origin + timedelta(days=i) for i in range(90)]
             validIndices = []
@@ -666,7 +667,7 @@ class Charts:
                 DB_CONNECTION.commit()
         return weights
 
-    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookbackStr="90d"):
+    def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookbackStr="90d", overriddenWeights=None):
         recordRequest(userID, ticker)
         forward = 90
         
@@ -744,150 +745,47 @@ class Charts:
                             event.set()
                             del self._TRAINING_REGISTRY[ticker]
 
-            if bias is None or (not hasattr(bias, "__getitem__")) or len(bias) == 0:
-                info = stock.info
-                sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-                ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
-                avgWeights = self._getIndustryAverageWeights(ind, sector)
-                bias = [avgWeights, 0]
-            bias = bias[0]
-
-            histories = {90: [bias[0], "D"], 180: [bias[1], "D"], 365: [bias[2], "D"], 730: [bias[3], "D"], 1825: [bias[4], "D"]}
+            if overriddenWeights:
+                bias = [overriddenWeights, 0]
+            else:
+                if bias is None or (not hasattr(bias, "__getitem__")) or len(bias) == 0:
+                    info = stock.info
+                    sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
+                    ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
+                    avgWeights = self._getIndustryAverageWeights(ind, sector)
+                    bias = [avgWeights, 0]
+            
+            # Extract weights for ensemble component configuration
+            currentWeights = bias[0]
+            histories = {90: [currentWeights[0], "D"], 180: [currentWeights[1], "D"], 365: [currentWeights[2], "D"], 730: [currentWeights[3], "D"], 1825: [currentWeights[4], "D"]}
             
             startDate = lastDate - timedelta(days=lookback)
             window = history[history.index <= startDate]
             actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward]
             
-            if len(actuals) > 20:
-                raw, _ = self._forecast(stock, window, histories, startDate, forward=len(actuals), parallel=True)
-                result = minimize(self._smapeLoss, bias, args=(raw, actuals), method='SLSQP', bounds=self._BOUNDS, constraints=self._CONSTRAINTS)
+            if not overriddenWeights and len(actuals) > 20:
+                raw, _, _ = self._forecast(stock, window, histories, startDate, forward=len(actuals), parallel=True)
+                result = minimize(self._smapeLoss, currentWeights, args=(raw, actuals), method='SLSQP', bounds=self._BOUNDS, constraints=self._CONSTRAINTS)
                 bestWeight = result.x
                 # Re-apply weights to histories for the final forecast
                 histories = {90: [bestWeight[0], "D"], 180: [bestWeight[1], "D"], 365: [bestWeight[2], "D"], 730: [bestWeight[3], "D"], 1825: [bestWeight[4], "D"]}
             else:
-                bestWeight = np.array([0.2, 0.2, 0.2, 0.2, 0.2])
+                bestWeight = np.array(currentWeights)
 
             if userID: STATUS_REGISTRY[userID] = "Applying Image Template..."
 
-            future, futureSigma = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True)
+            future, futureSigma, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True)
             if future is None: return None
             prophetTrend = np.dot(bestWeight, future)
             prophetSigma = np.dot(bestWeight, futureSigma)
-
-            # --- Integrated Weighted Ensemble (80/10/5/5) ---
-            # 1. Ticker Component (80% Weight)
-            tickerPct = (prophetTrend - prophetTrend[0]) / prophetTrend[0]
             
-            # 2. Sector Component (10% Weight)
-            sectorPct = np.zeros(forward + 1)
-            try:
-                info = stock.info
-                sectorKey = info.get("sectorKey", "").lower()
-                etf = self._SECTOR_MAP.get(sectorKey)
-                if etf:
-                    if userID: STATUS_REGISTRY[userID] = f"Analyzing {etf} Sector Tide..."
-                    etfTicker = yf.Ticker(etf)
-                    etfHist = etfTicker.history(period="6mo", interval="1d")
-                    etfHist = etfHist.resample("D").interpolate(method="linear").ffill().bfill()
-                    if not etfHist.empty:
-                        startDateLookback = lastDate - timedelta(days=lookback)
-                        targetIdx = etfHist.index.get_indexer([startDateLookback], method='pad')[0]
-                        pastPrice = float(etfHist.iloc[targetIdx]["Close"])
-                        currentPrice = float(etfHist["Close"].iloc[-1])
-                        totalSectorGain = (currentPrice / pastPrice) - 1
-                        sectorPct = np.linspace(0, totalSectorGain, forward + 1)
-                        sectorImpactPct = totalSectorGain * 100
-            except Exception: pass
-
-            # 3. Analyst Component (5% Weight)
-            analystPct = np.zeros(forward + 1)
-            ratingMap = {
-                'strong_buy': 1.0, 'buy': 0.5, 'hold': 0.0, 
-                'sell': -0.5, 'strong_sell': -1.0
-            }
-            try:
-                # Use historical recommendations if available for the lookback window
-                recs = stock.recommendations
-                usedHistorical = False
-                if recs is not None and not recs.empty:
-                    # Calculate months needed based on the lookback variable
-                    monthsNeeded = math.ceil(lookback / 30)
-                    windowRecs = recs.iloc[:monthsNeeded]
-                    
-                    # Compute weighted sentiment score across all periods in the window
-                    periodSums = windowRecs[['strongBuy', 'buy', 'hold', 'sell', 'strongSell']].sum()
-                    totalRatings = periodSums.sum()
-                    
-                    if totalRatings > 0:
-                        score = (
-                            periodSums['strongBuy'] * 1.0 +
-                            periodSums['buy'] * 0.5 +
-                            periodSums['hold'] * 0.0 +
-                            periodSums['sell'] * -0.5 +
-                            periodSums['strongSell'] * -1.0
-                        ) / totalRatings
-                        ratingScore = score
-                        analystRating = "historical consensus"
-                        usedHistorical = True
-
-                if not usedHistorical:
-                    analystRating = stock.info.get("recommendationKey", "none").lower()
-                    ratingScore = ratingMap.get(analystRating, 0.0)
-                
-                if ratingScore != 0.0:
-                    analystPct = np.linspace(0, ratingScore, forward + 1)
-            except Exception: pass
-
-            # 4. Behavioural Component (5% Weight)
-            behaviouralPct = np.zeros(forward + 1)
-            try:
-                instHeld = stock.info.get("heldPercentInstitutions", 0.0)
-                shortFloat = stock.info.get("shortPercentOfFloat", 0.0)
-                insiderHeld = stock.info.get("heldPercentInsiders", 0.0)
-                
-                # Composite behavioural score (-100% to +100%)
-                # Institutions: 0% to 100% -> 0.0 to 0.5
-                instScore = (instHeld if instHeld is not None else 0.0) * 0.5
-                # Short Interest: 0% to 20% -> 0.0 to -0.4
-                shortScore = max((shortFloat if shortFloat is not None else 0.0) * -2.0, -0.4)
-                # Insiders: 0% to 5% -> 0.0 to 0.1
-                insiderScore = min((insiderHeld if insiderHeld is not None else 0.0) * 2.0, 0.1)
-                
-                totalBehaviouralScore = instScore + shortScore + insiderScore
-                behaviouralPct = np.linspace(0, totalBehaviouralScore, forward + 1)
-            except Exception: pass
-
-            # 5. Macro Component (5% Weight)
-            macroPct = np.zeros(forward + 1)
-            macroImpacts = {}
-            try:
-                if userID: STATUS_REGISTRY[userID] = "Analyzing Macro Currents..."
-                info = stock.info
-                sectorKey = info.get("sectorKey", "").lower()
-                
-                for key, symbol in self._MACRO_MAP.items():
-                    mTicker = yf.Ticker(symbol)
-                    mHist = mTicker.history(period="6mo", interval="1d")
-                    mHist = mHist.resample("D").interpolate(method="linear").ffill().bfill()
-                    if not mHist.empty:
-                        startDateLookback = lastDate - timedelta(days=lookback)
-                        targetIdx = mHist.index.get_indexer([startDateLookback], method='pad')[0]
-                        pastVal = float(mHist.iloc[targetIdx]["Close"])
-                        currentVal = float(mHist["Close"].iloc[-1])
-                        totalGain = (currentVal / pastVal) - 1
-                        
-                        # Sector-aware dynamic correlation
-                        correlationMap = self._MACRO_CORRELATIONS.get(key, {})
-                        impactDir = correlationMap.get(sectorKey, correlationMap.get('default', 1))
-                        
-                        macroImpacts[key] = {'val': totalGain * 100, 'dir': impactDir}
-                        macroPct += np.linspace(0, totalGain * impactDir, forward + 1) / len(self._MACRO_MAP)
-            except Exception: pass
-
-            # Final Blend
-            # Final_Delta = (0.75 * Ticker) + (0.10 * Sector) + (0.05 * Macro) + (0.05 * Analyst) + (0.05 * Behavioural)
-            finalPctCurve = (0.75 * tickerPct) + (0.10 * sectorPct) + (0.05 * macroPct) + (0.05 * analystPct) + (0.05 * behaviouralPct)
-            prophetTrend = prophetTrend[0] * (1 + finalPctCurve)
+            # Accountability: Calculate weighted global impacts from changepoints
+            globalImpacts = {}
+            for i, (deltas, cp_dates) in enumerate(insights):
+                weight = bestWeight[i]
+                for d, val in zip(cp_dates, deltas):
+                    d_str = pd.Timestamp(d).strftime('%Y-%m-%d')
+                    globalImpacts[d_str] = globalImpacts.get(d_str, 0) + (val * weight)
             # ------------------------------------------------
             
             if model == 1:
@@ -924,122 +822,27 @@ class Charts:
         ax.set_title(f"{str.upper(ticker)} Prediction (90d)", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
         factors = []
-        def _getImpact(dt):
-            try:
-                dtTimestamp = pd.Timestamp(dt).date()
-                predDates = [d.date() for d in futureDates]
-                if dtTimestamp in predDates:
-                    idx = predDates.index(dtTimestamp)
-                    if idx > 0:
-                        change = prophetTrend[idx] - prophetTrend[idx-1]
-                        pct = (change / prophetTrend[idx-1])
-                        symbol = themes.mixed
-                        color = themes.yellow
-                        if abs(pct) >= 0.002:
-                            symbol = themes.arrowUp if change > 0 else themes.arrowDown
-                            color = themes.brand if change > 0 else themes.red
-                        return {"symbol": symbol, "pct": f"{round(abs(pct),2)}%", "color": color, "val": pct}
-            except Exception: pass
-            return {"symbol": themes.mixed, "pct": "0.0%", "color": themes.yellow, "val": 0.0}
-
-        try:
-            lastEarnings = stock.get_earnings_dates().index[0].tz_localize(None).date()
-            if startDate.tz_localize(None) < pd.Timestamp(lastEarnings) < lastDate.tz_localize(None)+timedelta(days=90):
-                factors.append({"impact": _getImpact(lastEarnings), "label": f"Earnings Date [{lastEarnings.strftime('%x')}]"})
-        except Exception: pass
-
-        try:
-            exDateTimestamp = stock.info.get("exDividendDate")
-            if exDateTimestamp:
-                exDate = pd.Timestamp(datetime.fromtimestamp(exDateTimestamp).date())
-                if startDate.tz_localize(None) < exDate < lastDate.tz_localize(None)+timedelta(days=90):
-                    factors.append({"impact": _getImpact(exDate), "label": f"Ex-Dividend [{exDate.strftime('%x')}]"})
-        except Exception: pass
-
-        try:
-            payDate = stock.calendar.get("Dividend Date")
-            if payDate:
-                payDateTimestamp = pd.Timestamp(payDate)
-                if startDate.tz_localize(None) < payDateTimestamp < lastDate.tz_localize(None)+timedelta(days=90):
-                    factors.append({"impact": _getImpact(payDate), "label": f"Dividend Payout [{payDateTimestamp.strftime('%x')}]"})
-        except Exception: pass
-
-        try:
-            # Industry Trend [ETF] (10% weight)
-            info = stock.info
-            sectorKey = info.get("sectorKey", "").lower()
-            etf = self._SECTOR_MAP.get(sectorKey)
-            if etf and 'sectorImpactPct' in locals():
-                color = themes.brand if sectorImpactPct > 0 else themes.red
-                symbol = themes.arrowUp if sectorImpactPct > 0 else themes.arrowDown
-                factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(sectorImpactPct * 0.1):.1f}%", "color": color, "val": sectorImpactPct * 0.001},
-                    "label": f"Industry Trend [{etf}]"
-                })
-
-            # Analyst Rating [Status] (5% weight)
-            if 'analystRating' in locals() and analystRating != 'none':
-                ratingScore = ratingMap.get(analystRating, 0.0)
-                impactPct = ratingScore * 5.0 # Max 5% impact
-                color = themes.brand if impactPct > 0 else (themes.red if impactPct < 0 else themes.yellow)
-                symbol = themes.arrowUp if impactPct > 0 else (themes.arrowDown if impactPct < 0 else themes.mixed)
-                formattedRating = analystRating.replace('_', ' ').title()
-                factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(impactPct):.1f}%", "color": color, "val": impactPct * 0.01},
-                    "label": f"Analyst Rating [{formattedRating}]"
-                })
-
-            # Behavioural Factors (5% weight)
-            if 'totalBehaviouralScore' in locals():
-                # Institutions
-                instImpact = instHeld * 2.5 # 2.5% of total 5%
-                factors.append({
-                    "impact": {"symbol": themes.mixed if instHeld < 0.5 else themes.arrowUp, "pct": f"{abs(instImpact):.1f}%", "color": themes.brand if instHeld > 0.5 else themes.yellow, "val": instImpact * 0.01},
-                    "label": ("Institutions Hold Majority" if instHeld > 0.5 else "Retail Traders Hold Majority")+f" [{round((instHeld if instHeld > 0.5 else (1-instHeld))*100)}%]"
-                })
-                # Short Interest
-                shortImpact = shortScore * 5.0 # Scales the 0 to -0.4 score back to 0 to -2%
-                factors.append({
-                    "impact": {"symbol": themes.arrowDown if shortFloat > 0.1 else themes.mixed, "pct": f"{abs(shortImpact):.1f}%", "color": themes.red if shortFloat > 0.1 else themes.yellow, "val": shortImpact * 0.01},
-                    "label": f"Short Sentiment (Float) [{round(shortFloat*100)}%]"
-                })
-                # Insider Movement
-                insiderImpact = insiderScore * 5.0
-                factors.append({
-                    "impact": {"symbol": themes.arrowUp if insiderHeld > 0.02 else themes.mixed, "pct": f"{abs(insiderImpact):.1f}%", "color": themes.brand if insiderHeld > 0.02 else themes.yellow, "val": insiderImpact * 0.01},
-                    "label": f"Held by Insiders [{round(insiderHeld*100)}%]"
-                })
-
-            # Macro Factors
-            for key, data in macroImpacts.items():
-                val = data['val']
-                impactDir = data['dir']
-                realImpact = val * impactDir * 0.05 # 5% weight
-                
-                color = themes.brand if realImpact > 0 else (themes.red if realImpact < 0 else themes.yellow)
-                symbol = themes.arrowUp if realImpact > 0 else (themes.arrowDown if realImpact < 0 else themes.mixed)
-                
-                label_map = {'rates': 'Interest Rates', 'energy': 'Energy Costs', 'economy': 'Economic'}
-                base_label = label_map.get(key, key)
-                ticker_label = self._MACRO_MAP.get(key, "")
-                
-                # Dynamic Labeling: Tailwind vs Headwind
-                if impactDir > 0:
-                    status = "Tailwind" if val > 0 else "Headwind"
-                else:
-                    status = "Headwind" if val > 0 else "Tailwind"
-                    
-                factors.append({
-                    "impact": {"symbol": symbol, "pct": f"{abs(realImpact):.1f}%", "color": color, "val": realImpact * 0.01},
-                    "label": f"{base_label} {status} [{ticker_label}]"
-                })
-        except Exception: pass
         
+        # Filter and rank Structural Shifts
+        impactValues = np.array(list(globalImpacts.values()))
+        if len(impactValues) > 0:
+            threshold = np.std(impactValues) * 2.2 # 2.2 sigma for high significance
+            sortedImpacts = sorted(globalImpacts.items(), key=lambda x: abs(x[1]), reverse=True)
+            
+            for d_str, totalDelta in sortedImpacts:
+                if abs(totalDelta) > threshold and len(factors) < 4:
+                    symbol = themes.arrowUp if totalDelta > 0 else themes.arrowDown
+                    color = themes.brand if totalDelta > 0 else themes.red
+                    # Scale delta to a readable impact percentage (approximation)
+                    factors.append({
+                        "impact": {"symbol": symbol, "pct": f"{abs(totalDelta*10):.1f}%", "color": color, "val": totalDelta},
+                        "label": f"Pattern shift on {pd.Timestamp(d_str).strftime('%x')}"
+                    })
         factors = [f for f in factors if not (isinstance(f, dict) and f.get("impact", {}).get("pct") in ["0.0%", "0%"])]
 
         chartBuf = self._buffer(fig)
         if userID: STATUS_REGISTRY[userID] = "Finalizing Image..."
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), median[-1]
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), (median[-1], bestWeight.tolist())
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 
@@ -1468,18 +1271,21 @@ def getTickerFeedback(ticker: str):
         if ticker in EPHEMERAL_FEEDBACK:
             data = EPHEMERAL_FEEDBACK[ticker]
             likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
+    return likes, dislikes
+
+def mutateWeights(ticker: str, currentWeights: list):
+    likes, dislikes = getTickerFeedback(ticker)
+    mutationStrength = 1.0 / (1.0 + (likes / (dislikes + 1.0)))
     
-    conf = 0.1
-    try:
-        with DB_LOCK:
-            with DB_CONNECTION.cursor() as cursor:
-                cursor.execute("SELECT confidence FROM ticker WHERE ticker = %s", (ticker,))
-                row = cursor.fetchone()
-                if row and row[0] is not None:
-                    conf = row[0]
-    except Exception: pass
+    # Stochastic Jump: Mix current weights with a random target
+    randomTarget = np.random.rand(5)
+    randomTarget /= randomTarget.sum()
     
-    return likes, dislikes, conf
+    # Shift weights by the dynamic mutation strength
+    mutated = [w * (1 - mutationStrength) + rt * mutationStrength for w, rt in zip(currentWeights, randomTarget)]
+    total = sum(mutated)
+    if total > 0: mutated = [w / total for w in mutated]
+    return mutated
 
 def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = None):
     ticker = ticker.upper()
@@ -1493,72 +1299,36 @@ def recordPredictionFeedback(ticker: str, rating: str, currentWeights: list = No
         elif rating == "👎":
             EPHEMERAL_FEEDBACK[ticker]["dislikes"] += 1
 
-    try:
-        with DB_LOCK:
-            with DB_CONNECTION.cursor() as cursor:
-                cursor.execute("SELECT weight, confidence FROM ticker WHERE ticker = %s", (ticker,))
-                row = cursor.fetchone()
-                
-                likes, dislikes = 0, 0
-                with EPHEMERAL_LOCK:
-                    if ticker in EPHEMERAL_FEEDBACK:
-                        data = EPHEMERAL_FEEDBACK[ticker]
-                        likes, dislikes = data.get("likes", 0), data.get("dislikes", 0)
-
-                if row:
-                    weightsRaw = row[0]
-                    # Format preservation: [weights, count]
-                    if isinstance(weightsRaw, list):
-                        weights = weightsRaw[0]
-                        trainingCount = weightsRaw[1] if len(weightsRaw) > 1 else 0
-                    elif isinstance(weightsRaw, str):
+    if rating == "👍" and currentWeights:
+        try:
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    cursor.execute("SELECT weight FROM ticker WHERE ticker = %s", (ticker,))
+                    row = cursor.fetchone()
+                    trainingCount = 0
+                    if row and row[0]:
                         try:
-                            decoded = json.loads(weightsRaw)
-                            weights = decoded[0]
+                            decoded = json.loads(row[0]) if isinstance(row[0], str) else row[0]
                             trainingCount = decoded[1] if len(decoded) > 1 else 0
                         except: pass
-                    
-                    if row[1] is not None:
-                        conf = row[1]
 
-                if rating == "👍":
-                    # Positive feedback locks in the model (decreases mutation potential)
-                    conf = max(0.01, conf - 0.02)
-                elif rating == "👎":
-                    # Calculate dynamic mutation strength based on feedback ratio
-                    # Higher likes = lower mutation strength. No likes = 1.0 (max mutation)
-                    mutationStrength = 1.0 / (1.0 + (likes / (dislikes + 1.0)))
+                    now = str(int(datetime.now().timestamp()))
+                    serializedWeights = json.dumps([currentWeights, trainingCount])
                     
-                    # Ensure confidence reflects the current "vettedness" for database
-                    conf = min(1.0, conf + mutationStrength)
-                    
-                    # Stochastic Jump: Mix current weights with a random target
-                    randomTarget = np.random.rand(5)
-                    randomTarget /= randomTarget.sum()
-                    
-                    # Shift weights by the dynamic mutation strength
-                    weights = [w * (1 - mutationStrength) + rt * mutationStrength for w, rt in zip(weights, randomTarget)]
-                    total = sum(weights)
-                    if total > 0: weights = [w / total for w in weights]
+                    cursor.execute(
+                        """
+                        INSERT INTO ticker (ticker, weight, updated)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (ticker) DO UPDATE SET
+                            weight = EXCLUDED.weight,
+                            updated = EXCLUDED.updated;
+                        """,
+                        (ticker, serializedWeights, now)
+                    )
+                    DB_CONNECTION.commit()
+                    with Charts._CACHE_LOCK:
+                        Charts._CACHE.clear()
+        except Exception:
+            traceback.print_exc()
 
-                now = str(int(datetime.now().timestamp()))
-                serializedWeights = json.dumps([weights, trainingCount])
-                
-                cursor.execute(
-                    """
-                    INSERT INTO ticker (ticker, weight, confidence, updated)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (ticker) DO UPDATE SET
-                        weight = EXCLUDED.weight,
-                        confidence = EXCLUDED.confidence,
-                        updated = EXCLUDED.updated;
-                    """,
-                    (ticker, serializedWeights, conf, now)
-                )
-                DB_CONNECTION.commit()
-                with Charts._CACHE_LOCK:
-                    Charts._CACHE.clear()
-    except Exception:
-        traceback.print_exc()
-
-    return EPHEMERAL_FEEDBACK[ticker]["likes"], EPHEMERAL_FEEDBACK[ticker]["dislikes"]
+    return getTickerFeedback(ticker)
