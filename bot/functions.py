@@ -443,6 +443,54 @@ class Charts:
             logging.error(f"Tuned forecast failed for {ticker}: {e}")
         return None, (None, None, None)
 
+    def _analyzeEarnings(self, ticker, stock_obj):
+        """Analyzes historical surprises and dynamic peer sentiment to predict upcoming earnings impact."""
+        try:
+            earnings = stock_obj.get_earnings_dates()
+            if earnings is None or earnings.empty: return 0, None
+            
+            # Historical Surprises (past 4 quarters)
+            histSurprises = earnings.dropna(subset=['Surprise(%)'])
+            tickerSSI = histSurprises['Surprise(%)'].head(4).mean() if not histSurprises.empty else 0
+            
+            # upcoming date identification
+            upcoming = earnings[earnings['Reported EPS'].isna()].sort_index()
+            upcoming_date = upcoming.index[0] if not upcoming.empty else None
+            
+            if upcoming_date is None: return 0, None
+
+            # Dynamic Peer Discovery
+            peerSSI = 0
+            try:
+                industry = stock_obj.info.get("industry")
+                if industry:
+                    search = yf.Search(industry)
+                    peers = []
+                    for q in search.quotes:
+                        sym = q.get('symbol')
+                        if sym and sym != ticker and q.get('quoteType') == 'EQUITY':
+                            peers.append(sym)
+                            if len(peers) >= 3: break
+                    
+                    pSurprises = []
+                    for pSym in peers:
+                        try:
+                            pStock = yf.Ticker(pSym)
+                            pEarnings = pStock.get_earnings_dates()
+                            if pEarnings is not None and not pEarnings.empty:
+                                pHist = pEarnings.dropna(subset=['Surprise(%)'])
+                                if not pHist.empty: pSurprises.append(pHist['Surprise(%)'].head(1).iloc[0])
+                        except: pass
+                    if pSurprises: peerSSI = np.mean(pSurprises)
+            except: pass
+            
+            weightedSurprise = (0.7 * tickerSSI) + (0.3 * peerSSI)
+            return weightedSurprise, upcoming_date
+            
+        except Exception as e:
+            logging.error(f"Earnings analysis failed: {e}")
+        return 0, None
+
     def evaluate(self, ticker: str):
         ticker = ticker.upper()
         stock = yf.Ticker(ticker)
@@ -920,9 +968,9 @@ class Charts:
         tickerTrend = np.dot(bestWeight, curves)
         tickerSigma = np.dot(bestWeight, sigmas)
 
-        # 80/10/10 Blended Prediction Logic
-        # We blend 10% Sector and 10% S&P500 into the final trend
-        blendWeights = {'ticker': 0.8, 'sector': 0.1, 'macro': 0.1}
+        # 75/10/10/5 Blended Prediction Logic
+        # We blend 10% Sector, 10% S&P500, and 5% Earnings Momentum into the final trend
+        blendWeights = {'ticker': 0.75, 'sector': 0.1, 'macro': 0.1, 'earnings': 0.05}
         sectorTrend = None
         macroTrend = None
         
@@ -951,12 +999,27 @@ class Charts:
             macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
         except Exception: macroFullData = (None, None, None)
 
+        # Earnings Analysis
+        weightedSurprise, upcomingDate = self._analyzeEarnings(ticker, stock)
+        earningsTrendFactor = np.ones_like(tickerTrend)
+        if upcomingDate:
+            naiveUpcoming = upcomingDate.tz_localize(None) if upcomingDate.tzinfo else upcomingDate
+            naiveLast = lastDate.tz_localize(None) if lastDate.tzinfo else lastDate
+            daysOut = (naiveUpcoming - naiveLast).days
+            # Only apply if it falls in the future window
+            if 0 <= daysOut < len(earningsTrendFactor):
+                earningsTrendFactor[daysOut:] = 1.0 + (weightedSurprise / 100)
+            else: upcomingDate = None # Out of view
+
         if sectorTrend is None:
-            blendWeights['ticker'] += 0.1
+            blendWeights['ticker'] += 0.05
             blendWeights['sector'] = 0
         if macroTrend is None:
-            blendWeights['ticker'] += 0.1
+            blendWeights['ticker'] += 0.05
             blendWeights['macro'] = 0
+        if upcomingDate is None:
+            blendWeights['ticker'] += 0.05
+            blendWeights['earnings'] = 0
 
         # Combine Trends
         prophetTrend = blendWeights['ticker'] * tickerTrend
@@ -984,6 +1047,14 @@ class Charts:
             marketFactors.append({
                 "impact": {"symbol": themes.arrowUp if mImpact > 0 else themes.arrowDown, "pct": f"{abs(mImpact*100):.1f}%", "color": (themes.brand if mImpact > 0 else themes.red), "val": mImpact},
                 "label": "Overall Market Trend"
+            })
+
+        if blendWeights['earnings'] > 0:
+            prophetTrend += blendWeights['earnings'] * (tickerTrend * earningsTrendFactor)
+            eImpact = (weightedSurprise / 100) * blendWeights['earnings']
+            marketFactors.append({
+                "impact": {"symbol": themes.arrowUp if eImpact > 0 else themes.arrowDown, "pct": f"{abs(eImpact*100):.1f}%", "color": (themes.brand if eImpact > 0 else themes.red), "val": eImpact},
+                "label": f"Expecting {weightedSurprise:+.1f}% in Earnings"
             })
 
         prophetSigma = tickerSigma # We follow individual volatility
