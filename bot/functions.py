@@ -39,7 +39,7 @@ set_default_font(load_google_font("Montserrat", weight="bold"))
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Global Executors for CPU-optimized training
-_CPU_COUNT = os.cpu_count() or 4
+_CPU_COUNT = min(os.cpu_count() or 4, 4)
 _PROCESS_EXECUTOR = ProcessPoolExecutor(max_workers=_CPU_COUNT)
 _THREAD_EXECUTOR = ThreadPoolExecutor(max_workers=20)
 
@@ -398,13 +398,107 @@ class Charts:
         }
     }
 
+    def evaluate(self, ticker: str):
+        ticker = ticker.upper()
+        stock = yf.Ticker(ticker)
+        
+        # Get YTD data
+        today = datetime.now()
+        start_date = f"{today.year}-01-01"
+        history = stock.history(start=start_date, interval="1d")
+        
+        # Ensure we have at least 90 days + some training context
+        if len(history) < 120:
+            history = stock.history(period="1y", interval="1d")
+            
+        if len(history) < 95:
+            return None
+
+        # Split: Fixed 90-day evaluation window
+        split_idx = len(history) - 90
+        train_df = history.iloc[:split_idx]
+        test_df = history.iloc[split_idx:]
+        
+        # Get current model weights from DB
+        currentWeights = [0.2] * 5
+        with DB_LOCK:
+            with DB_CONNECTION.cursor() as cursor:
+                cursor.execute("SELECT weight FROM ticker WHERE ticker = %s", (ticker,))
+                row = cursor.fetchone()
+                if row and row[0]:
+                    try:
+                        decoded = json.loads(row[0]) if isinstance(row[0], str) else row[0]
+                        currentWeights = decoded[0]
+                    except: pass
+
+        # Fit and Forecast using the training set
+        histories = {
+            90: [currentWeights[0], "D"], 
+            180: [currentWeights[1], "D"], 
+            365: [currentWeights[2], "D"], 
+            730: [currentWeights[3], "D"], 
+            1825: [currentWeights[4], "D"]
+        }
+        
+        forward = len(test_df)
+        last_train_date = train_df.index[-1]
+        
+        results = self._forecast(stock, train_df, histories, last_train_date, forward=forward, parallel=True, uncertaintySamples=0)
+        if results is None: return None
+        curves, sigmas, _ = results
+        
+        prediction = np.dot(currentWeights, curves)
+        
+        # Track price difference for each day
+        actual_vals = test_df['Close'].values
+        price_diffs = []
+        for p, a in zip(prediction, actual_vals):
+            price_diffs.append(p - a)
+
+        # Matplotlib Plot (Plain and simple)
+        fig, ax = plt.subplots(figsize=(10, 5))
+        
+        # Plot full history
+        ax.plot(history.index, history['Close'], label='Actual Price', color='#2c3e50', linewidth=1.5)
+        
+        # Plot Prediction
+        pred_dates = test_df.index
+        ax.plot(pred_dates, prediction, label='90-Day Backtest', color='#e74c3c', linestyle='--', linewidth=2)
+        
+        # Vertical line for split
+        ax.axvline(last_train_date, color='black', alpha=0.3, linestyle=':', label='Training End')
+        
+        # Labels and Title
+        ax.set_title(f"Accuracy Evaluation: {ticker} (90-Day Backtest)", fontsize=14, fontweight='bold')
+        ax.set_xlabel("Timeline")
+        ax.set_ylabel("Price (USD)")
+        ax.legend(loc='best')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        
+        # Error Calculation
+        smape = np.mean(2 * np.abs(np.array(price_diffs)) / (np.abs(prediction) + np.abs(actual_vals))) * 100
+        avg_diff = np.mean(np.abs(price_diffs))
+        
+        info_text = f"Backtest Window: 90 Days\nAvg Daily Error: ${avg_diff:.2f}\nSMAPE: {smape:.2f}%"
+        ax.text(0.02, 0.98, info_text, transform=ax.transAxes, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.9))
+        
+        plt.tight_layout()
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', dpi=100)
+        plt.close(fig)
+        buf.seek(0)
+        
+        test_range = (float(test_df['Close'].min()), float(test_df['Close'].max()))
+        return buf, price_diffs, test_range
+
+
     def __init__(self):
         self._TTL = 60*60*24
-        self._INFLECTIONS = 15
-        self._FLEXIBILITY = 0.08
+        self._INFLECTIONS = 22
+        self._FLEXIBILITY = 0.5
         self._RANGE = 0.9
         self._SAMPLES = 1500
-        self._SEASONALITY = 0.05
+        self._SEASONALITY = 0.05 #affects amplitude
         self._CONSTRAINTS = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
         self._BOUNDS = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
     
@@ -500,14 +594,23 @@ class Charts:
 
         if tasks:
             if parallel:
-                futures = [_PROCESS_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
-                for i, future in enumerate(as_completed(futures)):
-                    hRes, (curve, sigma, deltas, cp_dates) = future.result()
-                    resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
-                    originalKey = next((t[8] for t in tasks if t[0] == hRes), None)
-                    if originalKey:
-                        with self._CACHE_LOCK:
-                            self._CACHE[originalKey] = (time.time(), (curve, sigma, (deltas, cp_dates)))
+                try:
+                    futures = [_PROCESS_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
+                    for i, future in enumerate(as_completed(futures)):
+                        hRes, (curve, sigma, deltas, cp_dates) = future.result()
+                        resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
+                        originalKey = next((t[8] for t in tasks if t[0] == hRes), None)
+                        if originalKey:
+                            with self._CACHE_LOCK:
+                                self._CACHE[originalKey] = (time.time(), (curve, sigma, (deltas, cp_dates)))
+                except Exception as e:
+                    logging.error(f"ProcessPool Failure: {e}. Falling back to sequential processing.")
+                    for t in tasks:
+                        if t[0] not in resultsMap:
+                            hRes, (curve, sigma, deltas, cp_dates) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])
+                            resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
+                            with self._CACHE_LOCK:
+                                self._CACHE[t[8]] = (time.time(), (curve, sigma, (deltas, cp_dates)))
             else:
                 for t in tasks:
                     hRes, (curve, sigma, deltas, cp_dates) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])

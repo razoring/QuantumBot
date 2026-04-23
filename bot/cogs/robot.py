@@ -518,6 +518,59 @@ class Robot(commands.Cog):
             embed.description = "Sorry, an error occurred on our part. Please try again. \n\nIf the problem persists, please contact support."
             await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @commands.command(name="evaluate")
+    async def evaluate(self, ctx, *, ticker_input: str):
+        # Split by comma or space
+        tickers = [t.strip().upper() for t in re.split(r'[,\s]+', ticker_input) if t.strip()]
+        
+        if not tickers:
+            await ctx.send("Please provide at least one ticker symbol.")
+            return
+
+        status_msg = await ctx.send(f"Batch evaluating: **{', '.join(tickers)}**... (This may take a moment)")
+        
+        charts = functions.Charts()
+        results_processed = []
+        llm_report = ["### BACKTEST EVALUATION REPORT (90-DAY)"]
+
+        for ticker in tickers:
+            try:
+                # Update status for current ticker
+                await status_msg.edit(content=f"Evaluating **{ticker}**... ({len(results_processed)+1}/{len(tickers)})")
+                
+                result = await asyncio.to_thread(charts.evaluate, ticker)
+                
+                if result:
+                    buf, diffs, (low, high) = result
+                    file = discord.File(buf, filename=f"evaluation_{ticker}.png")
+                    await ctx.send(f"**{ticker} Visual Results**", file=file)
+                    
+                    # Format divergence data for the report
+                    diff_text = ", ".join([f"{d:+.2f}" for d in diffs])
+                    llm_report.append(f"\n{ticker.upper()}:")
+                    llm_report.append(f"Price Range: ${low:.2f} - ${high:.2f}")
+                    llm_report.append(f"Divergence: {diff_text}")
+                    
+                    results_processed.append(ticker)
+                else:
+                    await ctx.send(f"⚠️ Error: Could not evaluate **{ticker}**.")
+            except Exception:
+                traceback.print_exc()
+                await ctx.send(f"❌ Critical failure evaluating **{ticker}**.")
+
+        # Final Report Delivery
+        if results_processed:
+            full_report = "```\n" + "\n".join(llm_report) + "\n```"
+            # Handle Discord 2000 char limit
+            if len(full_report) > 1950:
+                chunks = [full_report[i:i+1950] for i in range(0, len(full_report), 1950)]
+                for chunk in chunks:
+                    await ctx.send(f"```\n{chunk.replace('```','')}\n```")
+            else:
+                await ctx.send(full_report)
+
+        await status_msg.edit(content=f"✅ Evaluation complete for: **{', '.join(results_processed)}**")
+
     @app_commands.command(name="me", description="Display account information")
     @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
     @app_commands.allowed_installs(guilds=True, users=True)
