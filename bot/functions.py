@@ -21,7 +21,7 @@ from matplotlib.colors import LinearSegmentedColormap, to_rgba
 from scipy.interpolate import CubicSpline
 from scipy.optimize import minimize
 from scipy.stats import norm
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from prophet import Prophet
 from pyfonts import set_default_font, load_google_font
 from PIL import Image, ImageFont, ImageDraw, ImageFilter
@@ -408,6 +408,40 @@ class Charts:
             'default': 1
         }
     }
+
+    def _getTunedForecast(self, ticker, stock_obj, history, lastDate, forward):
+        """Internal helper to fetch tuned params and generate a forecast for index/sector reference."""
+        try:
+            weights = [0.2] * 5
+            params = [0.035, 0.1]
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        try:
+                            dbData = row[0] if isinstance(row[0], (list, dict)) else json.loads(row[0])
+                            if len(dbData) == 2: weights = dbData[0]
+                            elif len(dbData) == 3: weights, params = dbData[0], dbData[1]
+                            age = int(time.time()) - int(row[1])
+                            if age > self._TTL:
+                                freshData = self._liveTrain(ticker, userID=None)
+                                weights, params = freshData[0], freshData[1]
+                        except Exception: pass
+                    else:
+                        freshData = self._liveTrain(ticker, userID=None)
+                        weights, params = freshData[0], freshData[1]
+
+            prophetParams = {'flexibility': params[0], 'seasonality': params[1], 'inflections': 22, 'range': 0.9}
+            ensemble_configs = {90:[weights[0],"D"], 180:[weights[1],"D"], 365:[weights[2],"D"], 730:[weights[3],"D"], 1825:[weights[4],"D"]}
+            
+            results = self._forecast(stock_obj, history, ensemble_configs, lastDate, forward=forward, parallel=True, prophetParams=prophetParams, uncertaintySamples=0)
+            if results is not None:
+                curves = results[0]
+                return np.dot(weights, curves), (weights, params, results)
+        except Exception as e:
+            logging.error(f"Tuned forecast failed for {ticker}: {e}")
+        return None, (None, None, None)
 
     def evaluate(self, ticker: str):
         ticker = ticker.upper()
@@ -829,7 +863,7 @@ class Charts:
 
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
-        history = stock.history(period="5y", interval="1d") if model != 0 else stock.history(period="1wk")
+        history = stock.history(period="5y", interval="1d", actions=True) if model != 0 else stock.history(period="1wk", actions=True)
         history = history.resample("D").interpolate(method="linear").ffill().bfill()
         if history.empty: return None
         
@@ -883,8 +917,76 @@ class Charts:
         curves, sigmas, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True, prophetParams=prophetParams)
         if curves is None: return None
         
-        prophetTrend = np.dot(bestWeight, curves)
-        prophetSigma = np.dot(bestWeight, sigmas)
+        tickerTrend = np.dot(bestWeight, curves)
+        tickerSigma = np.dot(bestWeight, sigmas)
+
+        # 80/10/10 Blended Prediction Logic
+        # We blend 10% Sector and 10% S&P500 into the final trend
+        blendWeights = {'ticker': 0.8, 'sector': 0.1, 'macro': 0.1}
+        sectorTrend = None
+        macroTrend = None
+        
+        # Sector Reference
+        etfTicker = None
+        etfStock = None
+        etfHistory = None
+        try:
+            sectorInfo = stock.info.get("sector")
+            if sectorInfo:
+                mappedSector = sectorInfo.lower().replace(" ", "-")
+                etfTicker = self._SECTOR_MAP.get(mappedSector)
+                if etfTicker:
+                     etfStock = yf.Ticker(etfTicker)
+                     etfHistory = etfStock.history(period="5y")
+                     etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
+                     sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
+        except Exception: pass
+
+        # Macro Reference
+        macroTicker = "^GSPC"
+        try:
+            macroStock = yf.Ticker(macroTicker)
+            macroHistory = macroStock.history(period="5y")
+            macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
+            macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
+        except Exception: macroFullData = (None, None, None)
+
+        if sectorTrend is None:
+            blendWeights['ticker'] += 0.1
+            blendWeights['sector'] = 0
+        if macroTrend is None:
+            blendWeights['ticker'] += 0.1
+            blendWeights['macro'] = 0
+
+        # Combine Trends
+        prophetTrend = blendWeights['ticker'] * tickerTrend
+        marketFactors = []
+
+        if sectorTrend is not None:
+            normFactor = history["Close"].iloc[-1] / etfHistory["Close"].iloc[-1]
+            prophetTrend += blendWeights['sector'] * (sectorTrend * normFactor)
+            
+            # Calculate Impact: (Projected Change %) * (Weight)
+            sRet = (sectorTrend[-1] - sectorTrend[0]) / sectorTrend[0]
+            sImpact = sRet * blendWeights['sector']
+            marketFactors.append({
+                "impact": {"symbol": themes.arrowUp if sImpact > 0 else themes.arrowDown, "pct": f"{abs(sImpact*100):.1f}%", "color": (themes.brand if sImpact > 0 else themes.red), "val": sImpact},
+                "label": "Sector Trend"
+            })
+
+        if macroTrend is not None:
+            normFactor = history["Close"].iloc[-1] / macroHistory["Close"].iloc[-1]
+            prophetTrend += blendWeights['macro'] * (macroTrend * normFactor)
+            
+            # Calculate Impact
+            mRet = (macroTrend[-1] - macroTrend[0]) / macroTrend[0]
+            mImpact = mRet * blendWeights['macro']
+            marketFactors.append({
+                "impact": {"symbol": themes.arrowUp if mImpact > 0 else themes.arrowDown, "pct": f"{abs(mImpact*100):.1f}%", "color": (themes.brand if mImpact > 0 else themes.red), "val": mImpact},
+                "label": "Overall Market Trend"
+            })
+
+        prophetSigma = tickerSigma # We follow individual volatility
 
         points = []
         if model != 1:
@@ -914,6 +1016,51 @@ class Charts:
         fig, ax = self._setupFigure()
         ax.plot(plotHistory.index, plotHistory["Close"], color=themes.brand, linewidth=2, zorder=10)
         
+        # Plot relative industry trend (Reusing Pre-calculated Blend Data)
+        try:
+            if sectorTrend is not None and etfHistory is not None:
+                plotEtfHistory = etfHistory[etfHistory.index > lastDate - timedelta(days=lookback)]
+                overlap = plotEtfHistory.index.intersection(plotHistory.index)
+                
+                if not overlap.empty:
+                    firstDate = overlap[0]
+                    stockStart = plotHistory.loc[firstDate, "Close"]
+                    etfStart = plotEtfHistory.loc[firstDate, "Close"]
+                    
+                    # Normalize History
+                    normalizedEtf = plotEtfHistory["Close"] * (stockStart / etfStart)
+                    ax.plot(plotEtfHistory.index, normalizedEtf, color=themes.teal, linewidth=1.5, linestyle="-.", zorder=5, alpha=0.4)
+                    
+                    # Already forecasted above
+                    etfFutureDates = [lastDate + timedelta(days=int(d)) for d in np.arange(0, forward + 1)]
+                    normalizedEtfFuture = sectorTrend * (stockStart / etfStart)
+                    
+                    ax.plot(etfFutureDates, normalizedEtfFuture, color=themes.teal, linewidth=1.5, linestyle="-.", zorder=5, alpha=0.4)
+        except Exception as e:
+            logging.error(f"Sector plot failed: {e}")
+            
+        # Plot relative Macro trend (S&P 500) (Reusing Pre-calculated Blend Data)
+        try:
+            if macroTrend is not None and macroHistory is not None:
+                plotMacroHistory = macroHistory[macroHistory.index > lastDate - timedelta(days=lookback)]
+                overlap = plotMacroHistory.index.intersection(plotHistory.index)
+                
+                if not overlap.empty:
+                    firstDate = overlap[0]
+                    stockStart = plotHistory.loc[firstDate, "Close"]
+                    macroStart = plotMacroHistory.loc[firstDate, "Close"]
+                    
+                    # Normalize Macro History
+                    normalizedMacro = plotMacroHistory["Close"] * (stockStart / macroStart)
+                    ax.plot(plotMacroHistory.index, normalizedMacro, color=themes.prismarine, linewidth=1.5, linestyle="-.", zorder=4, alpha=0.4)
+                    
+                    # Already forecasted above
+                    macroFutureDates = [lastDate + timedelta(days=int(d)) for d in np.arange(0, forward + 1)]
+                    normalizedMacroFuture = macroTrend * (stockStart / macroStart)
+                    ax.plot(macroFutureDates, normalizedMacroFuture, color=themes.prismarine, linewidth=1.5, linestyle="-.", zorder=4, alpha=0.4)
+        except Exception as e:
+            logging.error(f"Macro plot failed: {e}")
+            
         minY = min(plotHistory["Close"].min(), np.min(points))
         maxY = max(plotHistory["Close"].max(), np.max(points))
         
@@ -926,14 +1073,64 @@ class Charts:
         for i in range(mid): ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
         ax.plot(futureDates, median, color=themes.brand, linewidth=2, linestyle=("dashed" if model != 0 else "solid"))
 
+        try:
+            visibleStart = plotHistory.index[0].tz_localize(None) if plotHistory.index[0].tzinfo else plotHistory.index[0]
+            visibleEnd = futureDates[-1].tz_localize(None) if futureDates[-1].tzinfo else futureDates[-1]
+            lastNaive = lastDate.tz_localize(None) if lastDate.tzinfo else lastDate
+
+            earningsData = stock.get_earnings_dates()
+            if earningsData is not None and not earningsData.empty:
+                eDates = earningsData.index.tz_localize(None)
+                for ed in eDates:
+                    if visibleStart <= ed <= visibleEnd:
+                        if ed <= lastNaive:
+                            query_ed = ed.tz_localize(history.index.tzinfo) if history.index.tzinfo else ed
+                            price = history.asof(query_ed)["Close"]
+                        else:
+                            days_out = (ed - lastNaive).days
+                            if days_out < len(median): price = median[days_out]
+                            else: continue
+                        plot_ed = ed.tz_localize(history.index.tzinfo) if history.index.tzinfo else ed
+                        ax.scatter(plot_ed, price, color=themes.brand, marker='o', s=100, zorder=25, edgecolors='white', linewidth=1.5)
+
+            validExDates = []
+            divs = stock.dividends
+            if not divs.empty:
+                dDates = divs.index.tz_localize(None)
+                for dd in dDates:
+                    if visibleStart <= dd <= visibleEnd:
+                        validExDates.append(dd)
+                        
+            calEx = stock.calendar.get("Ex-Dividend Date")
+            if calEx:
+                if isinstance(calEx, (datetime, date)): 
+                    calExTs = pd.Timestamp(calEx)
+                    if visibleStart <= calExTs <= visibleEnd:
+                        if not any((abs((calExTs - d).days) <= 1) for d in validExDates):
+                            validExDates.append(calExTs)
+
+            for exDate in validExDates:
+                if exDate <= lastNaive:
+                    query_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate
+                    price = history.asof(query_ex)["Close"]
+                else:
+                    days_out = (exDate - lastNaive).days
+                    if days_out < len(median): price = median[days_out]
+                    else: price = median[-1]
+                plot_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate
+                ax.scatter(plot_ex, price, color=themes.brand, marker='s', s=100, zorder=25, edgecolors='white', linewidth=1.5)
+        except Exception as e: logging.error(f"Event marker error: {e}")
+
         allDates = list(plotHistory.index) + futureDates
         self._formatAxes(ax, allDates, minY, maxY, median[-1], formatX=True)
         
         bbox = dict(boxstyle="square,pad=0.3", fc=themes.bgDark, ec="none", alpha=1.0)
         ax.annotate(f"${median[-1]:.2f}", xy=(1, median[-1]), xycoords=("axes fraction", "data"), xytext=(5, 0), textcoords="offset points", va="center", ha="left", color=themes.brand, fontweight="bold", fontsize=11, bbox=bbox)
+        # Draw legend for custom elements manually if needed
+        # ax.set_title is overwritten later, so no need here.
         ax.set_title(f"{str.upper(ticker)} Prediction (90d)", fontdict={"weight": "black", "size": 40, "color": themes.brand}, loc="center")
 
-        factors = []
+        factors = marketFactors # Start with market and sector trends
         
         # Filter and rank Structural Shifts
         impactValues = np.array(list(globalImpacts.values()))

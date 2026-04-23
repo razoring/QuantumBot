@@ -156,6 +156,13 @@ class Robot(commands.Cog):
             
             tickersToTrain = [r[0] for r in rows if r[0]]
             
+            # Ensure sector ETFs and Macro indexes are always trained during the weekend batch
+            sector_etfs = list(functions.Charts._SECTOR_MAP.values())
+            macro_indexes = ["^GSPC"]
+            for etf in sector_etfs + macro_indexes:
+                if etf not in tickersToTrain:
+                    tickersToTrain.append(etf)
+            
             if tickersToTrain:
                 charts = functions.Charts()
                 for ticker in tickersToTrain:
