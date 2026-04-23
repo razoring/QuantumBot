@@ -431,7 +431,7 @@ class Robot(commands.Cog):
             selectedLookback = lookback.value if lookback else "90d"
 
             embed = discord.Embed(color=discord.Colour.teal(), title=f"{str.upper(ticker)} Prediction ({selectedLookback})")
-            embed.set_footer(text=f"Every piece of feedback will be considered and any feedback will help improve the prediction models.")
+            embed.set_footer(text="Source: Yahoo Finance @ %s"%(datetime.datetime.now().strftime("%m/%d/%Y @ %H:%M:%S")))
             
             selectedModel = int(model.value) if model else 2
             warning = False

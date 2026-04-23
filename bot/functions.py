@@ -39,7 +39,7 @@ set_default_font(load_google_font("Montserrat", weight="bold"))
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 # Global Executors for CPU-optimized training
-_CPU_COUNT = min(os.cpu_count() or 4, 4)
+_CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
 _PROCESS_EXECUTOR = ProcessPoolExecutor(max_workers=_CPU_COUNT)
 _THREAD_EXECUTOR = ThreadPoolExecutor(max_workers=20)
 
@@ -153,8 +153,8 @@ class Stamp:
         draw.text(xy=(1153, 75), text=self._serverName, font=self._font(48), fill="white")
         draw.text(xy=(1153, 135), text=self._serverInvite.replace("https://", ""), font=self._font(28), fill=(112, 128, 144))
         draw.text(xy=(688,95) if "predict" in self._styles else (709,95),text=self._styles, font=self._font(48), fill=themes.brand)
-        draw.text(xy=(2430,270), text="Source: finance.yahoo.com", font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
-        draw.text(xy=(2430,290), text="Valid as of: "+datetime.now().strftime("%m/%d/%Y @ %H:%M:%S"), font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
+        #draw.text(xy=(2430,270), text="Source: finance.yahoo.com", font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
+        #draw.text(xy=(2430,290), text="Valid as of: "+datetime.now().strftime("%m/%d/%Y @ %H:%M:%S"), font=self._font(15), fill=(56,68,80), align="right", anchor="rt")
 
         contentBBox = [(1745,84),(2441,184)]
         contentWidth = contentBBox[1][0]-contentBBox[0][0]
@@ -419,19 +419,27 @@ class Charts:
         train_df = history.iloc[:split_idx]
         test_df = history.iloc[split_idx:]
         
-        # Get current model weights from DB
+        # Get current model weights and params from DB
         currentWeights = [0.2] * 5
+        currentParams = [0.035, 0.1] # Default flexibility and seasonality
+        
         with DB_LOCK:
             with DB_CONNECTION.cursor() as cursor:
                 cursor.execute("SELECT weight FROM ticker WHERE ticker = %s", (ticker,))
                 row = cursor.fetchone()
                 if row and row[0]:
                     try:
-                        decoded = json.loads(row[0]) if isinstance(row[0], str) else row[0]
-                        currentWeights = decoded[0]
+                        decoded = row[0] if isinstance(row[0], (list, dict)) else json.loads(row[0])
+                        # Handle Migration: [weights, count] -> [weights, [flex, season], count]
+                        if len(decoded) == 2:
+                            currentWeights = decoded[0]
+                        elif len(decoded) == 3:
+                            currentWeights = decoded[0]
+                            currentParams = decoded[1]
                     except: pass
 
-        # Fit and Forecast using the training set
+        # Fit and Forecast using the training set with tuned params
+        prophetParams = {'flexibility': currentParams[0], 'seasonality': currentParams[1], 'inflections': 22, 'range': 0.9}
         histories = {
             90: [currentWeights[0], "D"], 
             180: [currentWeights[1], "D"], 
@@ -443,7 +451,7 @@ class Charts:
         forward = len(test_df)
         last_train_date = train_df.index[-1]
         
-        results = self._forecast(stock, train_df, histories, last_train_date, forward=forward, parallel=True, uncertaintySamples=0)
+        results = self._forecast(stock, train_df, histories, last_train_date, forward=forward, parallel=True, uncertaintySamples=0, prophetParams=prophetParams)
         if results is None: return None
         curves, sigmas, _ = results
         
@@ -502,7 +510,7 @@ class Charts:
         self._CONSTRAINTS = ({'type': 'eq', 'fun': lambda w: np.sum(w)-1.0})
         self._BOUNDS = ((0.0,1.0),(0.0,1.0),(0.0,1.0),(0.05,1.0),(0.05,1.0))
     
-    def _forecast(self, stock, history, configs, today, forward=90, parallel=True, uncertaintySamples=None):
+    def _forecast(self, stock, history, configs, today, forward=90, parallel=True, uncertaintySamples=None, prophetParams=None):
         today = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else today
         if today not in history.index:
             locs = history.index.get_indexer([today], method='pad')
@@ -549,13 +557,17 @@ class Charts:
         curPrice = history.loc[lastDate]["Close"]
         
         samples = uncertaintySamples if uncertaintySamples is not None else (min(self._SAMPLES, 500) if parallel else 0)
-        prophetParams = {
+        
+        # Merge passed params with defaults
+        baseParams = {
             'seasonality': self._SEASONALITY,
             'inflections': self._INFLECTIONS,
             'flexibility': self._FLEXIBILITY,
             'range': self._RANGE,
             'uncertaintySamples': samples
         }
+        if prophetParams: baseParams.update(prophetParams)
+        prophetParams = baseParams
 
         tasks = []
         resultsMap = {}
@@ -624,6 +636,53 @@ class Charts:
         insights = [r[2] for r in finalResults]
         return (curves, sigmas, insights)
 
+    def _liveEval(self, stock, history, weights, params):
+        """Internal quantitative evaluator for sMAPE and Shape Score (90-day backtest)"""
+        results = self._batchEval(stock, history, weights, [params])
+        return results[0]
+
+    def _batchEval(self, stock, history, weights, param_list):
+        """High-performance batch evaluator that saturates all CPU cores with multiple hypotheses"""
+        split_idx = len(history) - 90
+        if split_idx < 20: return [(1.0, 0.0)] * len(param_list)
+        
+        train_df = history.iloc[:split_idx]
+        test_df = history.iloc[split_idx:]
+        actual_vals = test_df['Close'].values
+        forward = len(test_df)
+        last_train_date = train_df.index[-1]
+        
+        all_results = []
+        
+        # Build a mega-task list to saturate the ProcessPool
+        # We call _forecast for each param set, but _forecast itself is parallel.
+        # To truly batch, we'd need to flatten the tasks, but since _forecast handles 5 tasks,
+        # calling it in a loop with parallel=True is efficient as the Global Executor is shared.
+        for params in param_list:
+            prophetParams = {'flexibility': params[0], 'seasonality': params[1], 'inflections': 22, 'range': 0.9}
+            histories = {90:[weights[0],"D"], 180:[weights[1],"D"], 365:[weights[2],"D"], 730:[weights[3],"D"], 1825:[weights[4],"D"]}
+            
+            results = self._forecast(stock, train_df, histories, last_train_date, forward=forward, parallel=True, uncertaintySamples=0, prophetParams=prophetParams)
+            if results is None:
+                all_results.append((1.0, 0.0))
+                continue
+                
+            curves, _, _ = results
+            prediction = np.dot(weights, curves)
+            
+            # 1. sMAPE
+            smape = np.mean(2 * np.abs(prediction - actual_vals) / (np.abs(prediction) + np.abs(actual_vals) + 1e-8))
+            
+            # 2. Shape Score
+            p_diff = np.diff(prediction)
+            a_diff = np.diff(actual_vals)
+            hits = np.sum(np.sign(p_diff) == np.sign(a_diff))
+            shape_score = (hits / len(p_diff)) if len(p_diff) > 0 else 0.0
+            
+            all_results.append((smape, shape_score))
+            
+        return all_results
+
     def _smapeLoss(self, w, raw, actuals):
         preds = np.dot(w, raw)
         denom = (np.abs(actuals) + np.abs(preds))
@@ -666,109 +725,83 @@ class Charts:
         except Exception: pass
         return [0.2, 0.2, 0.2, 0.2, 0.2]
 
-    def _liveTrain(self, ticker, userID=None):
-        ticker = str(ticker).upper()
-        now = datetime.now().replace(tzinfo=None)
-        end = now - timedelta(days=30)
-        start = end - timedelta(days=365*5)
+    def _liveTrain(self, ticker, userID=None, force=False):
+        try:
+            ticker = ticker.upper()
+            stock = yf.Ticker(ticker)
+            history = stock.history(period="2y", interval="1d")
+            if len(history) < 120: history = stock.history(period="10y", interval="1d")
+            if len(history) < 95: return [0.2]*5, [0.035, 0.1], 0
+            
+            # Hardware-Aware Dynamic Search Space (Total-1)
+            # We generate N workers' worth of candidates across the spectrum
+            num_candidates = max(4, _CPU_COUNT)
+            
+            # Anchor Points for interpolation
+            # Low Flex -> High Flex, High Seasonality -> Low Seasonality
+            flex_range = np.linspace(0.015, 0.25, num_candidates)
+            season_range = np.linspace(0.3, 0.01, num_candidates)
+            
+            best_smape = 1.0
+            best_shape = 0.0
+            best_params = [0.035, 0.1]
+            best_weights = [0.2] * 5
+            
+            if userID: STATUS_REGISTRY[userID] = f"Dynamic Deep-Scanning ({num_candidates} Hypotheses)..."
 
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-        ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
+            # Generate all candidates for batch processing
+            param_candidates = []
+            for i in range(num_candidates):
+                param_candidates.append([float(flex_range[i]), float(season_range[i])])
 
-        with DB_LOCK:
-            with DB_CONNECTION.cursor() as cursor:
-                cursor.execute("SELECT weight FROM ticker WHERE ticker = %s;", (ticker,))
-                row = cursor.fetchone()
+            # Parallel Batch Sweep
+            sweep_results = self._batchEval(stock, history, [0.2]*5, param_candidates)
+            
+            for i, (smape, shape) in enumerate(sweep_results):
+                params = param_candidates[i]
+                # Optimization logic: Favor Shape > 0.6, then minimize sMAPE
+                is_better = False
+                if smape < best_smape * 0.95: 
+                    is_better = True
+                elif shape > best_shape + 0.1 and smape < 0.08:
+                    is_better = True
                 
-        if row is None:
-            avgWeights = self._getIndustryAverageWeights(ind, sector)
-            weight = [avgWeights, 0]
-        else:
-            try: weight = self.clean(row[0])
-            except Exception: weight = [[0.2, 0.2, 0.2, 0.2, 0.2], 0]
+                if is_better:
+                    best_smape = smape
+                    best_shape = shape
+                    best_params = params
+                    best_weights = [0.2] * 5
 
-        bestWeight = weight[0]
-
-        history = stock.history(start=start-timedelta(days=730), end=end, interval="1d")
-        if history.empty: return
-        
-        if history.index.tz is not None: history.index = history.index.tz_localize(None)
-        window = history.loc[start.strftime('%Y-%m-%d'):end.strftime('%Y-%m-%d')]
-        daily = window.resample("D").interpolate()
-        if daily.index.tz is not None: daily.index = daily.index.tz_convert("America/New_York").tz_localize(None)
-        origins = window["Close"].resample("1MS").last().dropna()
-
-        bias = None
-        weights = None
-        errors = []
-        def _getHistoricalData(origin):
-            biasConfigs = {90:[bestWeight[0], "D"], 180:[bestWeight[1], "D"], 365:[bestWeight[2], "D"], 730:[bestWeight[3], "D"], 1825:[bestWeight[4], "D"]}
-            res = self._forecast(stock, window, biasConfigs, origin, forward=90, parallel=True, uncertaintySamples=0)
-            if res is None: return None
-            rawCurves, rawSigmas, _ = res
+            # Update Database
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    cursor.execute("SELECT weight FROM ticker WHERE ticker = %s", (ticker,))
+                    row = cursor.fetchone()
+                    count = 1
+                    if row and row[0] is not None:
+                        try:
+                            d = row[0] if isinstance(row[0], (list, dict)) else json.loads(row[0])
+                            count = d[2] + 1 if len(d) == 3 else d[1] + 1
+                        except: pass
+                    
+                    new_weight_data = [best_weights, best_params, count]
+                    cursor.execute(
+                        """
+                        INSERT INTO ticker (ticker, accuracy, weight, updated)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (ticker) DO UPDATE SET
+                            accuracy = EXCLUDED.accuracy,
+                            weight = EXCLUDED.weight,
+                            updated = EXCLUDED.updated;
+                        """,
+                        (ticker, float(1.0 - best_smape), json.dumps(new_weight_data), int(time.time()))
+                    )
+                    DB_CONNECTION.commit()
             
-            targetDates = [origin + timedelta(days=i) for i in range(90)]
-            validIndices = []
-            actuals = []
-            for i, date in enumerate(targetDates):
-                d = date.tz_convert("America/New_York").tz_localize(None) if date.tzinfo is not None else date
-                if d in daily.index:
-                    validIndices.append(i)
-                    actuals.append(float(daily.loc[d, "Close"]))
-            
-            if not validIndices: return None
-            return (rawCurves[:, validIndices], np.array(actuals))
-
-        futures = {_THREAD_EXECUTOR.submit(_getHistoricalData, origin): origin for origin in origins.keys()}
-        
-        for future in as_completed(futures):
-            origin = futures[future]
-            resData = future.result()
-            if resData is None: continue
-            if userID: STATUS_REGISTRY[userID] = f"Backtesting for {str(origin.date().year)}..."
-            
-            matrix, targets = resData
-            initGuess = np.array(bestWeight, dtype=float)
-            initGuess = initGuess / np.sum(initGuess)
-            
-            res = minimize(self._smapeLoss, initGuess, args=(matrix, targets), method='SLSQP', bounds=self._BOUNDS, constraints=self._CONSTRAINTS)
-            bestWeight = res.x.tolist()
-            try: errors.append(float(res.fun))
-            except Exception: pass
-            
-            prevWeights, trainingCount = weight
-            adjustment = 0.05
-            avgWeights = [prevWeights[j]*(1-adjustment) + bestWeight[j]*adjustment for j in range(len(prevWeights))]
-            weights = [avgWeights, trainingCount+1]
-        timestamp = str(math.floor(int(datetime.now().timestamp())))
-        if weights is None: weights = weight
-
-        def _serialize(o):
-            if isinstance(o, np.generic): return o.item()
-            if isinstance(o, (np.ndarray,)): return o.tolist()
-            raise TypeError(f"Type {type(o)} not JSON serializable")
-
-        serialized = json.dumps(weights, default=_serialize)
-        avgError = float(sum(errors) / len(errors)) if len(errors) > 0 else 0.0
-
-        with DB_LOCK:
-            with DB_CONNECTION.cursor() as cursor:
-                cursor.execute(
-                    """
-                    INSERT INTO ticker (ticker, sector, industry, accuracy, weight, updated)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (ticker) DO UPDATE SET
-                        sector = EXCLUDED.sector,
-                        industry = EXCLUDED.industry,
-                        accuracy = EXCLUDED.accuracy,
-                        weight = EXCLUDED.weight,
-                        updated = EXCLUDED.updated;
-                    """,
-                    (ticker, sector, ind, avgError, serialized, timestamp))
-                DB_CONNECTION.commit()
-        return weights
+            return new_weight_data
+        except Exception:
+            traceback.print_exc()
+            return [[0.2]*5, [0.035, 0.1], 0]
 
     def project(self, ticker, model, serverName, serverInvite, serverIcon, userID, lookbackStr="90d", overriddenWeights=None):
         recordRequest(userID, ticker)
@@ -803,100 +836,65 @@ class Charts:
                 cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
                 rows = cursor.fetchone()
 
+        # Unpack weights and parameters
+        bestWeight = [0.2] * 5
+        bestParams = [0.035, 0.1]
+        
+        if rows and rows[0] is not None:
+            try:
+                # Handle database auto-decoding or NULLs
+                data = rows[0] if isinstance(rows[0], (list, dict)) else json.loads(rows[0])
+                # Migration Handling
+                if len(data) == 2:
+                    bestWeight = data[0]
+                elif len(data) == 3:
+                    bestWeight = data[0]
+                    bestParams = data[1]
+                
+                # Dynamic re-train if older than 24 hours
+                age = int(time.time()) - int(rows[1])
+                if age > self._TTL:
+                    data = self._liveTrain(ticker, userID)
+                    bestWeight, bestParams = data[0], data[1]
+            except Exception:
+                traceback.print_exc()
+        else:
+            # New ticker: Full train
+            data = self._liveTrain(ticker, userID)
+            bestWeight, bestParams = data[0], data[1]
+
+        if overriddenWeights: bestWeight = overriddenWeights
+        
+        prophetParams = {'flexibility': bestParams[0], 'seasonality': bestParams[1], 'inflections': 22, 'range': 0.9}
+        histories = {90:[bestWeight[0],"D"], 180:[bestWeight[1],"D"], 365:[bestWeight[2],"D"], 730:[bestWeight[3],"D"], 1825:[bestWeight[4],"D"]}
+        
+        # Parallel Execution for Implied Volatility and Forecast
+        curves, sigmas, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True, prophetParams=prophetParams)
+        if curves is None: return None
+        
+        prophetTrend = np.dot(bestWeight, curves)
+        prophetSigma = np.dot(bestWeight, sigmas)
+
         points = []
         if model != 1:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
-        
-        if model != 0:
-            train = True if not bias else False
-            if not bias and rows is not None:
-                if len(json.dumps(rows)) > 1:
-                    rows = self.clean(rows)
-                    weight:list = rows[0]
-                    updated = time.time()-int(rows[1])
-                    if weight:
-                        if updated < 432000:
-                            bias = weight
-                            train = False
-            if train and not bias:
-                isLeader = False
-                with self._REGISTRY_LOCK:
-                    if ticker not in self._TRAINING_REGISTRY:
-                        event = threading.Event()
-                        self._TRAINING_REGISTRY[ticker] = event
-                        isLeader = True
-                    else:
-                        event = self._TRAINING_REGISTRY[ticker]
-                
-                if not isLeader:
-                    if userID: STATUS_REGISTRY[userID] = f"Synchronizing {ticker} Prediction..."
-                    event.wait()
-                    with DB_LOCK:
-                        with DB_CONNECTION.cursor() as curResult:
-                            curResult.execute("select weight, updated from ticker where ticker = %s", (ticker,))
-                            rows = curResult.fetchone()
-                    if rows:
-                        rows = self.clean(rows)
-                        bias = rows[0]
-                else:
-                    try:
-                        if userID: STATUS_REGISTRY[userID] = "Live Retraining Weights..."
-                        bias = self._liveTrain(ticker=ticker, userID=userID)
-                    finally:
-                        with self._REGISTRY_LOCK:
-                            event.set()
-                            del self._TRAINING_REGISTRY[ticker]
+            
+        if model == 1:
+            if prophetTrend is None: raise ValueError("Prophet generation failed")
+            points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
+        elif model == 2 and len(points) > 0 and prophetTrend is not None:
+            spread = points - curPrice
+            points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
 
-            if overriddenWeights:
-                bias = [overriddenWeights, 0]
-            else:
-                if bias is None or (not hasattr(bias, "__getitem__")) or len(bias) == 0:
-                    info = stock.info
-                    sector = info.get("sectorKey", info.get("quoteType", "uncategorized")).lower()
-                    ind = yf.Industry(info.get("industryKey")).name.lower() if info.get("industryKey") else str.lower(info.get("category")) if info.get("category") else "unknown"
-                    avgWeights = self._getIndustryAverageWeights(ind, sector)
-                    bias = [avgWeights, 0]
-            
-            # Extract weights for ensemble component configuration
-            currentWeights = bias[0]
-            histories = {90: [currentWeights[0], "D"], 180: [currentWeights[1], "D"], 365: [currentWeights[2], "D"], 730: [currentWeights[3], "D"], 1825: [currentWeights[4], "D"]}
-            
-            startDate = lastDate - timedelta(days=lookback)
-            window = history[history.index <= startDate]
-            actuals = (history[(history.index > startDate) & (history.index <= lastDate)]["Close"].values)[:forward]
-            
-            if not overriddenWeights and len(actuals) > 20:
-                raw, _, _ = self._forecast(stock, window, histories, startDate, forward=len(actuals), parallel=True)
-                result = minimize(self._smapeLoss, currentWeights, args=(raw, actuals), method='SLSQP', bounds=self._BOUNDS, constraints=self._CONSTRAINTS)
-                bestWeight = result.x
-                # Re-apply weights to histories for the final forecast
-                histories = {90: [bestWeight[0], "D"], 180: [bestWeight[1], "D"], 365: [bestWeight[2], "D"], 730: [bestWeight[3], "D"], 1825: [bestWeight[4], "D"]}
-            else:
-                bestWeight = np.array(currentWeights)
+        # Accountability: Calculate weighted global impacts from changepoints
+        globalImpacts = {}
+        for i, (deltas, cp_dates) in enumerate(insights):
+            weight = bestWeight[i]
+            for d, val in zip(cp_dates, deltas):
+                d_str = pd.Timestamp(d).strftime('%Y-%m-%d')
+                globalImpacts[d_str] = globalImpacts.get(d_str, 0) + (val * weight)
 
-            if userID: STATUS_REGISTRY[userID] = "Applying Image Template..."
-
-            future, futureSigma, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True)
-            if future is None: return None
-            prophetTrend = np.dot(bestWeight, future)
-            prophetSigma = np.dot(bestWeight, futureSigma)
-            
-            # Accountability: Calculate weighted global impacts from changepoints
-            globalImpacts = {}
-            for i, (deltas, cp_dates) in enumerate(insights):
-                weight = bestWeight[i]
-                for d, val in zip(cp_dates, deltas):
-                    d_str = pd.Timestamp(d).strftime('%Y-%m-%d')
-                    globalImpacts[d_str] = globalImpacts.get(d_str, 0) + (val * weight)
-            # ------------------------------------------------
-            
-            if model == 1:
-                if prophetTrend is None: raise ValueError("Prophet generation failed")
-                points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
-            elif model == 2 and len(points) > 0 and prophetTrend is not None:
-                spread = points - curPrice
-                points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
 
         if len(points) == 0: return None
         points = np.maximum(points, 0.01)
@@ -939,13 +937,15 @@ class Charts:
                     # Scale delta to a readable impact percentage (approximation)
                     factors.append({
                         "impact": {"symbol": symbol, "pct": f"{abs(totalDelta*10):.1f}%", "color": color, "val": totalDelta},
-                        "label": f"Pattern shift on {pd.Timestamp(d_str).strftime('%x')}"
+                        "label": f"Similar pattern on {pd.Timestamp(d_str).strftime('%x')}"
                     })
         factors = [f for f in factors if not (isinstance(f, dict) and f.get("impact", {}).get("pct") in ["0.0%", "0%"])]
 
         chartBuf = self._buffer(fig)
         if userID: STATUS_REGISTRY[userID] = "Finalizing Image..."
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), (median[-1], bestWeight.tolist())
+        # Safe weight conversion for final return
+        finalWeights = bestWeight.tolist() if hasattr(bestWeight, "tolist") else bestWeight
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/predict", factors=factors).image(chartBuf), (median[-1], finalWeights)
     
     def _impliedVolatility(self, stock, lastDate, forward, curPrice, quantiles, futureDays):
         anchorsY = [[curPrice] * len(quantiles)] 

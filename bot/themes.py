@@ -1,6 +1,8 @@
 brand = "#13f7c9"
 red = "#ff0033"
 yellow = "#ffc600"
+blue = "#1ccbf7"
+magenta = "#cb1cf7"
 bgDark = "#0a131b"
 arrowDown = "▼"
 arrowUp = "▲"
