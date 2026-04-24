@@ -43,11 +43,10 @@ _CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
 _PROCESS_EXECUTOR = ProcessPoolExecutor(max_workers=_CPU_COUNT)
 _THREAD_EXECUTOR = ThreadPoolExecutor(max_workers=20)
 
+# Global Registry and Database Hooks (Populated by instance.py)
 STATUS_REGISTRY = {}
-
-DB_CONNECTION = pg.connect(dbname="QuantumBot",user=os.getenv("PG_USERNAME"),password=os.getenv("PG_PASSWORD"),host="localhost")
-if not DB_CONNECTION: raise Exception("Database connection failed")
-DB_LOCK = threading.RLock()
+DB_CONNECTION = None
+DB_LOCK = None
 
 def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice, params):
     """Top-level function for parallel Prophet fitting (Pickleable)"""
@@ -852,18 +851,39 @@ class Charts:
             
             for i, (smape, shape) in enumerate(sweep_results):
                 params = param_candidates[i]
-                # Optimization logic: Favor Shape > 0.6, then minimize sMAPE
                 is_better = False
                 if smape < best_smape * 0.95: 
                     is_better = True
-                elif shape > best_shape + 0.1 and smape < 0.08:
+                elif shape > best_shape + 0.15 and smape < 0.12: # Thresholds for shape favor
                     is_better = True
                 
                 if is_better:
                     best_smape = smape
                     best_shape = shape
                     best_params = params
-                    best_weights = [0.2] * 5
+
+            # 2. Final Weight Optimization for the winning parameters
+            try:
+                split_idx = len(history) - 90
+                train_df = history.iloc[:split_idx]
+                test_df = history.iloc[split_idx:]
+                actual_vals = test_df['Close'].values
+                
+                prophetParams = {'flexibility': best_params[0], 'seasonality': best_params[1], 'inflections': 22, 'range': 0.9}
+                histories = {90:[1,"D"], 180:[1,"D"], 365:[1,"D"], 730:[1,"D"], 1825:[1,"D"]}
+                
+                results = self._forecast(stock, train_df, histories, train_df.index[-1], forward=len(test_df), parallel=True, prophetParams=prophetParams)
+                if results:
+                    curves, _, _ = results
+                    cons = ({'type': 'eq', 'fun': lambda w: np.sum(w) - 1})
+                    bounds = [(0.0, 0.85)] * 5
+                    res = minimize(self._smapeLoss, [0.2]*5, args=(curves, actual_vals), bounds=bounds, constraints=cons, method='SLSQP')
+                    if res.success:
+                        best_weights = res.x.tolist()
+                        best_smape = self._smapeLoss(best_weights, curves, actual_vals)
+            except Exception as e:
+                logging.error(f"Weight optimization failed for {ticker}: {e}")
+                best_weights = [0.2] * 5 # Redundant but safe fallback
 
             # Update Database
             with DB_LOCK:
@@ -922,142 +942,164 @@ class Charts:
         quantiles = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
         futureDays = np.arange(0, forward + 1)
 
-        bias = None
-        with DB_LOCK:
-            with DB_CONNECTION.cursor() as cursor:
-                if userID: STATUS_REGISTRY[userID] = "Retrieving Latest Weights..."
-                cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
-                rows = cursor.fetchone()
+        # Short Sentiment Data (used by all models)
+        shortFloat = stock.info.get("shortPercentOfFloat", 0)
+        if shortFloat is None: shortFloat = 0
 
-        # Unpack weights and parameters
+        marketFactors = []
+        prophetTrend = None
+        prophetSigma = None
+        insights = []
         bestWeight = [0.2] * 5
-        bestParams = [0.035, 0.1]
-        
-        if rows and rows[0] is not None:
-            try:
-                # Handle database auto-decoding or NULLs
-                data = rows[0] if isinstance(rows[0], (list, dict)) else json.loads(rows[0])
-                # Migration Handling
-                if len(data) == 2:
-                    bestWeight = data[0]
-                elif len(data) == 3:
-                    bestWeight = data[0]
-                    bestParams = data[1]
-                
-                # Dynamic re-train if older than 24 hours
-                age = int(time.time()) - int(rows[1])
-                if age > self._TTL:
-                    data = self._liveTrain(ticker, userID)
-                    bestWeight, bestParams = data[0], data[1]
-            except Exception:
-                traceback.print_exc()
-        else:
-            # New ticker: Full train
-            data = self._liveTrain(ticker, userID)
-            bestWeight, bestParams = data[0], data[1]
-
-        if overriddenWeights: bestWeight = overriddenWeights
-        
-        prophetParams = {'flexibility': bestParams[0], 'seasonality': bestParams[1], 'inflections': 22, 'range': 0.9}
-        histories = {90:[bestWeight[0],"D"], 180:[bestWeight[1],"D"], 365:[bestWeight[2],"D"], 730:[bestWeight[3],"D"], 1825:[bestWeight[4],"D"]}
-        
-        # Parallel Execution for Implied Volatility and Forecast
-        curves, sigmas, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True, prophetParams=prophetParams)
-        if curves is None: return None
-        
-        tickerTrend = np.dot(bestWeight, curves)
-        tickerSigma = np.dot(bestWeight, sigmas)
-
-        # 75/10/10/5 Blended Prediction Logic
-        # We blend 10% Sector, 10% S&P500, and 5% Earnings Momentum into the final trend
-        blendWeights = {'ticker': 0.75, 'sector': 0.1, 'macro': 0.1, 'earnings': 0.05}
         sectorTrend = None
         macroTrend = None
-        
-        # Sector Reference
-        etfTicker = None
-        etfStock = None
         etfHistory = None
-        try:
-            sectorInfo = stock.info.get("sector")
-            if sectorInfo:
-                mappedSector = sectorInfo.lower().replace(" ", "-")
-                etfTicker = self._SECTOR_MAP.get(mappedSector)
-                if etfTicker:
-                     etfStock = yf.Ticker(etfTicker)
-                     etfHistory = etfStock.history(period="5y")
-                     etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
-                     sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
-        except Exception: pass
+        macroHistory = None
+        etfTicker = None
 
-        # Macro Reference
-        macroTicker = "^GSPC"
-        try:
-            macroStock = yf.Ticker(macroTicker)
-            macroHistory = macroStock.history(period="5y")
-            macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
-            macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
-        except Exception: macroFullData = (None, None, None)
+        if model == 0:
+            # Implied Volatility Only: No weights, no training, no blending
+            if shortFloat > 0:
+                marketFactors.append({
+                    "impact": {"symbol": themes.arrowDown, "pct": f"{shortFloat*100:.1f}%", "color": themes.red, "val": 0},
+                    "label": "Short Sentiment"
+                })
+        else:
+            # Extrapolation Models (1 & 2): Full analysis pipeline
+            bias = None
+            with DB_LOCK:
+                with DB_CONNECTION.cursor() as cursor:
+                    if userID: STATUS_REGISTRY[userID] = "Retrieving Latest Weights..."
+                    cursor.execute("select weight, updated from ticker where ticker = %s", (ticker,))
+                    rows = cursor.fetchone()
 
-        # Earnings Analysis
-        weightedSurprise, upcomingDate = self._analyzeEarnings(ticker, stock)
-        earningsTrendFactor = np.ones_like(tickerTrend)
-        if upcomingDate:
-            naiveUpcoming = upcomingDate.tz_localize(None) if upcomingDate.tzinfo else upcomingDate
-            naiveLast = lastDate.tz_localize(None) if lastDate.tzinfo else lastDate
-            daysOut = (naiveUpcoming - naiveLast).days
-            # Only apply if it falls in the future window
-            if 0 <= daysOut < len(earningsTrendFactor):
-                earningsTrendFactor[daysOut:] = 1.0 + (weightedSurprise / 100)
-            else: upcomingDate = None # Out of view
-
-        if sectorTrend is None:
-            blendWeights['ticker'] += 0.05
-            blendWeights['sector'] = 0
-        if macroTrend is None:
-            blendWeights['ticker'] += 0.05
-            blendWeights['macro'] = 0
-        if upcomingDate is None:
-            blendWeights['ticker'] += 0.05
-            blendWeights['earnings'] = 0
-
-        # Combine Trends
-        prophetTrend = blendWeights['ticker'] * tickerTrend
-        marketFactors = []
-
-        if sectorTrend is not None:
-            normFactor = history["Close"].iloc[-1] / etfHistory["Close"].iloc[-1]
-            prophetTrend += blendWeights['sector'] * (sectorTrend * normFactor)
+            # Unpack weights and parameters
+            bestParams = [0.035, 0.1]
             
-            # Calculate Impact: (Projected Change %) * (Weight)
-            sRet = (sectorTrend[-1] - sectorTrend[0]) / sectorTrend[0]
-            sImpact = sRet * blendWeights['sector']
-            marketFactors.append({
-                "impact": {"symbol": themes.arrowUp if sImpact > 0 else themes.arrowDown, "pct": f"{abs(sImpact*100):.1f}%", "color": (themes.brand if sImpact > 0 else themes.red), "val": sImpact},
-                "label": "Sector Trend"
-            })
+            if rows and rows[0] is not None:
+                try:
+                    data = rows[0] if isinstance(rows[0], (list, dict)) else json.loads(rows[0])
+                    if len(data) == 2:
+                        bestWeight = data[0]
+                    elif len(data) == 3:
+                        bestWeight = data[0]
+                        bestParams = data[1]
+                    
+                    age = int(time.time()) - int(rows[1])
+                    if age > self._TTL:
+                        data = self._liveTrain(ticker, userID)
+                        bestWeight, bestParams = data[0], data[1]
+                except Exception:
+                    traceback.print_exc()
+            else:
+                data = self._liveTrain(ticker, userID)
+                bestWeight, bestParams = data[0], data[1]
 
-        if macroTrend is not None:
-            normFactor = history["Close"].iloc[-1] / macroHistory["Close"].iloc[-1]
-            prophetTrend += blendWeights['macro'] * (macroTrend * normFactor)
+            if overriddenWeights: bestWeight = overriddenWeights
             
-            # Calculate Impact
-            mRet = (macroTrend[-1] - macroTrend[0]) / macroTrend[0]
-            mImpact = mRet * blendWeights['macro']
-            marketFactors.append({
-                "impact": {"symbol": themes.arrowUp if mImpact > 0 else themes.arrowDown, "pct": f"{abs(mImpact*100):.1f}%", "color": (themes.brand if mImpact > 0 else themes.red), "val": mImpact},
-                "label": "Overall Market Trend"
-            })
+            prophetParams = {'flexibility': bestParams[0], 'seasonality': bestParams[1], 'inflections': 22, 'range': 0.9}
+            histories = {90:[bestWeight[0],"D"], 180:[bestWeight[1],"D"], 365:[bestWeight[2],"D"], 730:[bestWeight[3],"D"], 1825:[bestWeight[4],"D"]}
+            
+            curves, sigmas, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True, prophetParams=prophetParams)
+            if curves is None: return None
+            
+            tickerTrend = np.dot(bestWeight, curves)
+            tickerSigma = np.dot(bestWeight, sigmas)
 
-        if blendWeights['earnings'] > 0:
-            prophetTrend += blendWeights['earnings'] * (tickerTrend * earningsTrendFactor)
-            eImpact = (weightedSurprise / 100) * blendWeights['earnings']
-            marketFactors.append({
-                "impact": {"symbol": themes.arrowUp if eImpact > 0 else themes.arrowDown, "pct": f"{abs(eImpact*100):.1f}%", "color": (themes.brand if eImpact > 0 else themes.red), "val": eImpact},
-                "label": f"Expecting {weightedSurprise:+.1f}% in Earnings"
-            })
+            # 70/10/10/5/5 Blended Prediction Logic
+            blendWeights = {'ticker': 0.70, 'sector': 0.1, 'macro': 0.1, 'earnings': 0.05, 'short': 0.05}
+            
+            # Sector Reference
+            etfStock = None
+            try:
+                sectorInfo = stock.info.get("sector")
+                if sectorInfo:
+                    mappedSector = sectorInfo.lower().replace(" ", "-")
+                    etfTicker = self._SECTOR_MAP.get(mappedSector)
+                    if etfTicker:
+                         etfStock = yf.Ticker(etfTicker)
+                         etfHistory = etfStock.history(period="5y")
+                         etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
+                         sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
+            except Exception: pass
 
-        prophetSigma = tickerSigma # We follow individual volatility
+            # Macro Reference
+            macroTicker = "^GSPC"
+            try:
+                macroStock = yf.Ticker(macroTicker)
+                macroHistory = macroStock.history(period="5y")
+                macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
+                macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
+            except Exception: macroFullData = (None, None, None)
+
+            # Earnings Analysis
+            weightedSurprise, upcomingDate = self._analyzeEarnings(ticker, stock)
+            earningsTrendFactor = np.ones_like(tickerTrend)
+            if upcomingDate:
+                naiveUpcoming = upcomingDate.tz_localize(None) if upcomingDate.tzinfo else upcomingDate
+                naiveLast = lastDate.tz_localize(None) if lastDate.tzinfo else lastDate
+                daysOut = (naiveUpcoming - naiveLast).days
+                if 0 <= daysOut < len(earningsTrendFactor):
+                    earningsTrendFactor[daysOut:] = 1.0 + (weightedSurprise / 100)
+                else: upcomingDate = None
+
+            if sectorTrend is None:
+                blendWeights['ticker'] += 0.05
+                blendWeights['sector'] = 0
+            if macroTrend is None:
+                blendWeights['ticker'] += 0.05
+                blendWeights['macro'] = 0
+            if upcomingDate is None:
+                blendWeights['ticker'] += 0.05
+                blendWeights['earnings'] = 0
+            if shortFloat == 0:
+                blendWeights['ticker'] += 0.05
+                blendWeights['short'] = 0
+
+            # Combine Trends
+            prophetTrend = blendWeights['ticker'] * tickerTrend
+
+            if sectorTrend is not None:
+                normFactor = history["Close"].iloc[-1] / etfHistory["Close"].iloc[-1]
+                prophetTrend += blendWeights['sector'] * (sectorTrend * normFactor)
+                
+                sRet = (sectorTrend[-1] - sectorTrend[0]) / sectorTrend[0]
+                sImpact = sRet * blendWeights['sector']
+                marketFactors.append({
+                    "impact": {"symbol": themes.arrowUp if sImpact > 0 else themes.arrowDown, "pct": f"{abs(sImpact*100):.1f}%", "color": (themes.brand if sImpact > 0 else themes.red), "val": sImpact},
+                    "label": "Sector Trend"
+                })
+
+            if macroTrend is not None:
+                normFactor = history["Close"].iloc[-1] / macroHistory["Close"].iloc[-1]
+                prophetTrend += blendWeights['macro'] * (macroTrend * normFactor)
+                
+                mRet = (macroTrend[-1] - macroTrend[0]) / macroTrend[0]
+                mImpact = mRet * blendWeights['macro']
+                marketFactors.append({
+                    "impact": {"symbol": themes.arrowUp if mImpact > 0 else themes.arrowDown, "pct": f"{abs(mImpact*100):.1f}%", "color": (themes.brand if mImpact > 0 else themes.red), "val": mImpact},
+                    "label": "Overall Market Trend"
+                })
+
+            if blendWeights['earnings'] > 0:
+                prophetTrend += blendWeights['earnings'] * (tickerTrend * earningsTrendFactor)
+                eImpact = (weightedSurprise / 100) * blendWeights['earnings']
+                marketFactors.append({
+                    "impact": {"symbol": themes.arrowUp if eImpact > 0 else themes.arrowDown, "pct": f"{abs(eImpact*100):.1f}%", "color": (themes.brand if eImpact > 0 else themes.red), "val": eImpact},
+                    "label": f"Expecting {weightedSurprise:+.1f}% in Earnings"
+                })
+
+            if blendWeights['short'] > 0:
+                shortImpactFactor = np.ones_like(tickerTrend) * (1.0 - shortFloat)
+                prophetTrend += blendWeights['short'] * (tickerTrend * shortImpactFactor)
+                
+                sImpactWeight = -shortFloat * blendWeights['short']
+                marketFactors.append({
+                    "impact": {"symbol": themes.arrowDown, "pct": f"{abs(sImpactWeight*100):.1f}%", "color": themes.red, "val": sImpactWeight},
+                    "label": f"Short Sentiment of {shortFloat*100:.1f}%"
+                })
+
+            prophetSigma = tickerSigma
 
         points = []
         if model != 1:
@@ -1210,7 +1252,7 @@ class Charts:
             sortedImpacts = sorted(globalImpacts.items(), key=lambda x: abs(x[1]), reverse=True)
             
             for d_str, totalDelta in sortedImpacts:
-                if abs(totalDelta) > threshold and len(factors) < 4:
+                if abs(totalDelta) > threshold and len(factors) < 10:
                     symbol = themes.arrowUp if totalDelta > 0 else themes.arrowDown
                     color = themes.brand if totalDelta > 0 else themes.red
                     # Scale delta to a readable impact percentage (approximation)

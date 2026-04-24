@@ -7,6 +7,21 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("BOT_TOKEN")
 
+# Establish single, persistent database connection at startup
+import psycopg2 as pg
+try:
+    import threading
+    DB_CONNECTION = pg.connect(
+        dbname="QuantumBot",
+        user=os.getenv("PG_USERNAME"),
+        password=os.getenv("PG_PASSWORD"),
+        host="localhost"
+    )
+    DB_LOCK = threading.RLock()
+except Exception as e:
+    print(f"Database Initialization Critical Error: {e}")
+    sys.exit(1)
+
 _intents = discord.Intents.default()
 _intents.message_content = True
 _intents.guilds = True
@@ -18,6 +33,10 @@ class QuantumBot(commands.Bot):
         super().__init__(command_prefix="!", intents=_intents)
 
     async def setup_hook(self):
+        # Inject persistent DB objects into modules before loading extensions
+        import functions
+        functions.DB_CONNECTION = DB_CONNECTION
+        functions.DB_LOCK = DB_LOCK
         await self.load_extension("cogs.robot")
         print("Extension 'cogs.robot' loaded.")
             
@@ -58,6 +77,13 @@ async def reloadExtensions(ctx):
     for moduleName in _targetModules:
         if moduleName in sys.modules:
             del sys.modules[moduleName]
+    
+    # Re-Inject DB into the fresh module after deletion
+    import functions
+    import themes
+    functions.DB_CONNECTION = DB_CONNECTION
+    functions.DB_LOCK = DB_LOCK
+    
     await qBot.load_extension("cogs.robot")
     
     if ctx.guild:
