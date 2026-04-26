@@ -119,7 +119,7 @@ class Stamp:
         rounded.paste(image, (0, 0), mask=mask)
         return rounded
 
-    def image(self, chartPath, displayLegend=True):
+    def image(self, chartPath, displayLegend=True, ticker=""):
         mainTemplate = Image.open("bot/assets/generation/template.png").convert("RGBA")
         legendOverlay = Image.open("bot/assets/generation/legend.png").convert("RGBA")
         chartImg = Image.open(chartPath).resize((2400, 1200)).convert("RGBA")
@@ -218,7 +218,7 @@ class Stamp:
                 else:
                     draw.text((posX, posY), str(factor), font=self._font(16), fill='white')
         else:
-            draw.text(xy=(2007, 58), text="Current Ticker Information:", font=self._font(16), fill=(112, 128, 144))
+            draw.text(xy=(2007, 58), text=f"{ticker} Fundamentals:", font=self._font(16), fill=(112, 128, 144))
             if self._factors:
                 groups = [
                     [
@@ -1258,7 +1258,7 @@ class Charts:
                     # Scale delta to a readable impact percentage (approximation)
                     factors.append({
                         "impact": {"symbol": symbol, "pct": f"{abs(totalDelta*10):.1f}%", "color": color, "val": totalDelta},
-                        "label": f"Similar pattern on {pd.Timestamp(d_str).strftime('%x')}"
+                        "label": f"Similar Pattern on {pd.Timestamp(d_str).strftime('%x')}"
                     })
         factors = [f for f in factors if not (isinstance(f, dict) and f.get("impact", {}).get("pct") in ["0.0%", "0%"])]
 
@@ -1516,7 +1516,7 @@ class Charts:
         if userID: STATUS_REGISTRY[userID] = "Generating Chart..."
         chartBuf = self._buffer(fig)
         if userID: STATUS_REGISTRY[userID] = "Finalizing Chart..."
-        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart", factors=staticQuote).image(chartBuf, displayLegend=False)
+        return Stamp(name=serverName, url=serverInvite, icon=serverIcon, styles="/chart", factors=staticQuote).image(chartBuf, displayLegend=False, ticker=str.capitalize(ticker))
 
 class User():
     def __init__(self, discordID):
