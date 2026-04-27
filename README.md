@@ -10,6 +10,7 @@ Select what best describes you:
 </details>
 <details>
 <summary>I'm a user!</summary>
+
 ## Quantum 
 
 - Cross Platform (Available on IOS, Android, Desktop Web)
