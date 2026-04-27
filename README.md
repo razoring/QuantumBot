@@ -13,7 +13,7 @@
     - **Implied Volatility (Most Reliable):** Uses a modified Black-scholes implied volatility formula that extracts options data (Calls/Puts) and uses a modified probability density function to display as a fan chart. However, data is less precise if the stock is less popular and final projection is less detailed.
     - **Extrapolation (Fallback):** Uses a modified times-series forecasting model with a custom fourier order and custom, individual weights. Predicts based on past data; does not understand why those patterns appear. Model takes into consideration other economic factors such that 70% of the final project is based on the model's prediction, 10% is based on the expected trend of the S&P 500, 10% is the expected trend of its current sector, 5% is based on the expected earnings, and 5% is based on the short sentiment (short float ratio).
     - **Grounded-Extrapolation (Default):** The best of both worlds. It takes both the implied volatility and the extrapolation results and averages the two to get both foresight and hindsight. (Not available if implied volatility data does not exist)
-- History Charts: Returns candlestick charts with the latest stock quote. Update button to retrieve latest quote.
+- Candlestick Charts: Returns candlestick charts with the latest stock quote. Update button to retrieve latest quote.
     - Past 24 Hours (1d)
     - Past Week (5d)
     - Past Month (1mo)
