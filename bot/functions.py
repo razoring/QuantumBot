@@ -409,7 +409,6 @@ class Charts:
     }
 
     def _getTunedForecast(self, ticker, stock_obj, history, lastDate, forward):
-        """Internal helper to fetch tuned params and generate a forecast for index/sector reference."""
         try:
             weights = [0.2] * 5
             params = [0.035, 0.1]
@@ -443,7 +442,6 @@ class Charts:
         return None, (None, None, None)
 
     def _analyzeEarnings(self, ticker, stock_obj):
-        """Analyzes historical surprises and dynamic peer sentiment to predict upcoming earnings impact."""
         try:
             earnings = stock_obj.get_earnings_dates()
             if earnings is None or earnings.empty: return 0, None
@@ -699,7 +697,7 @@ class Charts:
         if tasks:
             if parallel:
                 try:
-                    futures = [_PROCESS_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
+                    futures = [_THREAD_EXECUTOR.submit(_fitProphetModel, t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]) for t in tasks]
                     for i, future in enumerate(as_completed(futures)):
                         hRes, (curve, sigma, deltas, cp_dates) = future.result()
                         resultsMap[hRes] = (curve, sigma, (deltas, cp_dates))
@@ -708,7 +706,7 @@ class Charts:
                             with self._CACHE_LOCK:
                                 self._CACHE[originalKey] = (time.time(), (curve, sigma, (deltas, cp_dates)))
                 except Exception as e:
-                    logging.error(f"ProcessPool Failure: {e}. Falling back to sequential processing.")
+                    logging.error(f"ThreadPool Failure: {e}. Falling back to sequential processing.")
                     for t in tasks:
                         if t[0] not in resultsMap:
                             hRes, (curve, sigma, deltas, cp_dates) = _fitProphetModel(t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7])
@@ -729,12 +727,10 @@ class Charts:
         return (curves, sigmas, insights)
 
     def _liveEval(self, stock, history, weights, params):
-        """Internal quantitative evaluator for sMAPE and Shape Score (90-day backtest)"""
         results = self._batchEval(stock, history, weights, [params])
         return results[0]
 
     def _batchEval(self, stock, history, weights, param_list):
-        """High-performance batch evaluator that saturates all CPU cores with multiple hypotheses"""
         split_idx = len(history) - 90
         if split_idx < 20: return [(1.0, 0.0)] * len(param_list)
         
