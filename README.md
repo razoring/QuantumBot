@@ -7,16 +7,6 @@
 <details>
 <summary>Tell me how the code works!</summary>
 
-Of course. Here is an improved version of your markdown document.
-
-The changes focus on:
-*   **Conciseness**: Removing words like "extremely," "far more," "essential," and "significant" to make the statements more direct.
-*   **Active Voice**: Rephrasing sentences to be more active and assertive (e.g., "The system fetches..." instead of "Data is fetched by the system...").
-*   **Direct Framing**: Replacing "not X, but Y" constructions with direct statements about what the system *does*.
-*   **Flow and Clarity**: Restructuring sentences and using stronger topic sentences to guide the reader.
-
----
-
 ## Architecture
 
 ### Infrastructure
