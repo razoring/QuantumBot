@@ -6,11 +6,13 @@
 ## Quantum 
 
 - Cross Platform (Available on IOS, Android, Desktop Web)
+- Advertise your server with shareable graphics!
+- Quote: Returns just the stock quote with an update button to fetch the latest quote fast. Update button to retrieve latest quote.
+- Alerts: **set**, **delete**, **clear all**, or **list all** alerts. Alerts can be set at a specific price or can send daily volatility at the end of trading hours.
 - Prediction:
-    - **Implied Volatility (Most Reliable):** Uses a modified Black-scholes implied volatility formula that extracts options data (Calls/Puts) and uses a modified probability density function to display as a fan chart. However, data is less precise if the stock is less popular.
-    - **Extrapolation (Fallback):** Uses a modified times-series forecasting model with a custom fourier order and perfected weights. Predicts based on past data, however, does not understand why those patterns appear. However, through multiple phases observing different data ranges (1y, 3y, 5y), it returns with the mean of the data to increase the accuracy.
+    - **Implied Volatility (Most Reliable):** Uses a modified Black-scholes implied volatility formula that extracts options data (Calls/Puts) and uses a modified probability density function to display as a fan chart. However, data is less precise if the stock is less popular and final projection is less detailed.
+    - **Extrapolation (Fallback):** Uses a modified times-series forecasting model with a custom fourier order and custom, individual weights. Predicts based on past data; does not understand why those patterns appear. Model takes into consideration other economic factors such that 70% of the final project is based on the model's prediction, 10% is based on the expected trend of the S&P 500, 10% is the expected trend of its current sector, 5% is based on the expected earnings, and 5% is based on the short sentiment (short float ratio).
     - **Grounded-Extrapolation (Default):** The best of both worlds. It takes both the implied volatility and the extrapolation results and averages the two to get both foresight and hindsight. (Not available if implied volatility data does not exist)
-- Quote: Returns just the stock quote with an update button to fetch the latest quote fast.
 - History Charts: Returns candlestick charts with the latest stock quote. Update button to retrieve latest quote.
     - Past 24 Hours (1d)
     - Past Week (5d)
@@ -23,11 +25,6 @@
     - Past 5 Years (5y)
     - Past 10 Years (10y)
     - Maximum Displayable (all)
-- Advertise your server!
-- Alerts: Set, delete, clear all, or list all alerts. Alerts can be set at a specific price or can send daily volatility at the end of trading hours.
-- Smart Cache: Predictions are updated daily, once generated, the chart image gets cached so further retrieval of the same ticker is quicker. History charts are cached by their period. Charts with a lower period (max, 10y, 5y) are cached for longer.
-- Version is live updated by the git commits count. (pretty cool)
-
 
 ## Installation
 [![Install](https://img.shields.io/badge/on_discord-5865F2?logo=discord&logoColor=white&label=install
@@ -42,8 +39,9 @@
 
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. |
-| `model` | `string` | *Optional*. The model to use. Default: Aggregate-Extrapolation.|
+| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
+| `model` | `string` | *Optional*. The model to use. **Default: Aggregate-Extrapolation**|
+| `lookback` | `string` | *Optional*. The range of the past prices to display. **Default: 90d**|
 
 #### History Charts
 
@@ -53,7 +51,7 @@
 
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. |
+| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
 | `duration` | `string` | **Required**. The cutoff of the data. |
 
 #### Live Quote
@@ -64,40 +62,26 @@
 
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. |
+| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
 
 #### Alerts
 
 ```
-/alerts <action> <ticker/identifier> <price>
+/alerts
+```
+| Parameter | Type     | Description                |
+| :-------- | :------- | :------------------------- |
+| `none` | - | - |
+
+#### Tickers
+
+```
+/tickers <ticker>
 ```
 
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
-| `action` | `string` | **Required**. The action to take. |
-| `ticker` | `string` | *Optional*. The symbol to modify. |
-| `identifier` | `string` | *Optional*. The ID of the alert object to modify. |
-| `price` | `number` | *Optional*. The price to alert at. |
-
-Alerts Usage:
-
-
-Creating an alert for META at $600:
-```
-/alerts action:create ticker:meta price:600
-```
-List every alert (returns identifier)
-```
-/alerts action:list
-```
-Deleting an alert from identifier (#1204952):
-```
-/alerts action:delete identifier:1204952
-```
-Clear every alert:
-```
-/alerts action:clear
-```
+| `query` | `string` | **Required**. The query to search for ticker.|
 
 #### Help
 
@@ -106,7 +90,7 @@ Clear every alert:
 ```
 | Parameter | Type     | Description                |
 | :-------- | :------- | :------------------------- |
-| `none` | `None` | - |
+| `none` | - | - |
 
 ## Support
 
