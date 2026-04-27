@@ -3,6 +3,13 @@
 [![Join](https://camo.githubusercontent.com/d98378c65f343e4caef2b96cbe18bdc5bda7f5858f14b2691157ae3dffcc1b2e/68747470733a2f2f696d672e736869656c64732e696f2f62616467652f6a6f696e5f75732d6f6e5f646973636f72642d3538363546323f6c6f676f3d646973636f7264266c6f676f436f6c6f723d7768697465)](https://discord.gg/CEtxwANbAy)
 [![Install](https://img.shields.io/badge/on_discord-5865F2?logo=discord&logoColor=white&label=install
 )](https://discord.com/oauth2/authorize?client_id=1447285084402094212)
+
+Select what best describes you:
+<details>
+<summary>I'm a professional/researcher!</summary>
+</details>
+<details>
+<summary>I'm a user!</summary>
 ## Quantum 
 
 - Cross Platform (Available on IOS, Android, Desktop Web)
@@ -95,3 +102,4 @@
 ## Support
 
 For support, join the [discord server](https://discord.gg/CEtxwANbAy).
+</details>
