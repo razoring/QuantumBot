@@ -4,12 +4,9 @@
 [![Install](https://img.shields.io/badge/on_discord-5865F2?logo=discord&logoColor=white&label=install
 )](https://discord.com/oauth2/authorize?client_id=1447285084402094212)
 
-Select what best describes you:
 <details>
-<summary>I'm a professional/researcher!</summary>
+<summary>Tell me how the code works!</summary>
 </details>
-<details>
-<summary>I'm a user!</summary>
 
 ## Quantum 
 
@@ -103,4 +100,3 @@ Select what best describes you:
 ## Support
 
 For support, join the [discord server](https://discord.gg/CEtxwANbAy).
-</details>
