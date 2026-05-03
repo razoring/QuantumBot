@@ -174,7 +174,7 @@ Database access is optimized with connection pooling and prepared statements to 
 
 ## Quantum 
 
-- Cross Platform (Available on IOS, Android, Desktop Web)
+- Cross Platform (Available on iOS, Android, Desktop, Web via Discord)
 - Advertise your server with shareable graphics!
 - Quote: Returns just the stock quote with an update button to fetch the latest quote fast. Update button to retrieve latest quote.
 - Alerts: **set**, **delete**, **clear all**, or **list all** alerts. Alerts can be set at a specific price or can send daily volatility at the end of trading hours.
