@@ -11,9 +11,10 @@ train.tar
 .venv/
 index/__pycache__
 /__pycache__/
-/__pycache__
-.pyc
+__pycache__
+*.pyc
 /bot/__pycache__/
 __pycache__/
 *.py[cod]
 *$py.class
+bot/__pycache__/functions.cpython-39.pyc
