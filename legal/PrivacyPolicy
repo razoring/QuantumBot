@@ -12,9 +12,12 @@ We are committed to respecting your privacy. By using the Service, you consent t
 
 2. INFORMATION WE COLLECT
 
+WE DO NOT COLLECT PERSONAL AND OR IDENTIFIABLE INFORMATION.
+
 We collect information to provide better services to all our users. The types of information we collect include:
 
 2.1. Automated Telemetry Data (Anonymized):
+
 When you interact with the Bot (e.g., running commands such as /predict or /chart), we automatically collect certain technical data ("Telemetry"). This data is anonymized and cannot be used to personally identify you. This includes, but is not limited to:
 
 Command Usage: Which commands are executed and how frequently.
@@ -57,7 +60,7 @@ To manage server access and enforce our Terms of Service.
 
 4. DATA SHARING AND DISCLOSURE
 
-We do not sell, trade, or rent your personal identification information to others. We may share generic aggregated demographic information not linked to any personal identification information regarding visitors and users with our business partners, trusted affiliates, and advertisers for the purposes outlined above.
+We do not sell, trade, or rent your personal identification information to others.
 
 We may disclose your information if required to do so by law or in the good-faith belief that such action is necessary to comply with state and federal laws or respond to a court order, judicial, or other government subpoena.
 
