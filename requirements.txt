@@ -10,3 +10,5 @@ prophet
 pyfonts
 Pillow
 requests
+discord_webhook
+PyGithub
