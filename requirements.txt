@@ -1,3 +1,12 @@
 discord.py
 python-dotenv
 psycopg2-binary
+numpy
+pandas
+yfinance
+matplotlib
+scipy
+prophet
+pyfonts
+Pillow
+requests
