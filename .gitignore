@@ -19,3 +19,4 @@ __pycache__/
 *$py.class
 bot/__pycache__/functions.cpython-39.pyc
 ssh.env
+.deploy.py
