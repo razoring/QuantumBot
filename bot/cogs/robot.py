@@ -35,7 +35,7 @@ DEFAULT_ICON = "bot/assets/icons/discord.png"
 HUMANIZER = functions.Humanizer()
 gitClient = Github(auth=Auth.Token(GIT))
 
-VERIFY_CHANNEL_ID = 1488666182985977986
+VERIFY_CHANNEL_ID = 1482515397138972885
 ACCESS_ROLE_ID = 1482476984159436800
 
 def getVersion():
