@@ -15,7 +15,7 @@ try:
         dbname="QuantumBot",
         user=os.getenv("PG_USERNAME"),
         password=os.getenv("PG_PASSWORD"),
-        host="localhost"
+        host=os.getenv("PG_HOST", "172.17.0.1")
     )
     DB_LOCK = threading.RLock()
 except Exception as e:

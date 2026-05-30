@@ -18,3 +18,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 bot/__pycache__/functions.cpython-39.pyc
+ssh.env
