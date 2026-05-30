@@ -247,8 +247,10 @@ class Robot(commands.Cog):
         try:
             await interaction.response.defer(ephemeral=True)
             embed = discord.Embed(color=discord.Colour.teal(), title=f"Quantum (v{getVersion()})")
-            with open("bot/modular/help.txt", "r") as txt:
-                embed.description = txt.read()
+            with open("README.md", "r", encoding="utf-8") as md:
+                content = md.read()
+                usage_start = content.find("## Usage")
+                embed.description = content[usage_start:] if usage_start != -1 else "Usage documentation not found."
             await interaction.followup.send(embed=embed)
         except Exception as e:
             traceback.print_exc()

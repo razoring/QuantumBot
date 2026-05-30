@@ -200,66 +200,31 @@ Database access is optimized with connection pooling and prepared statements to 
 )](https://discord.com/oauth2/authorize?client_id=1447285084402094212)
 ## Usage
 
-#### Prediction
+**Prediction**
+`/predict <ticker> <model?>`
+- **ticker**: Valid Yahoo Finance ticker (use `/tickers` to validate).
+- **model**: Choose from Implied Volatility, Extrapolation, Aggregate-Extrapolation, and Logical Analysis. Default is Aggregate-Extrapolation.
 
-```
-/predict <ticker> <model>
-```
+**Charts**
+`/chart <ticker> <duration>`
+- **ticker**: Valid Yahoo Finance ticker.
+- **duration**: Options include 1d, 5d, 1mo, 3mo, 6mo, 1y, ytd, 2y, 5y, 10y, all.
 
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
-| `model` | `string` | *Optional*. The model to use. **Default: Aggregate-Extrapolation**|
-| `lookback` | `string` | *Optional*. The range of the past prices to display. **Default: 90d**|
+**Live Quote**
+`/quote <ticker>`
+- **ticker**: Valid Yahoo Finance ticker.
 
-#### History Charts
+**Alerts**
+`/alerts`
+- Set or manage price target alerts and daily volatility notifications.
 
-```
-/chart <ticker> <duration>
-```
+**Tickers**
+`/tickers <query>`
+- **query**: Symbol to search for or validate.
 
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
-| `duration` | `string` | **Required**. The cutoff of the data. |
-
-#### Live Quote
-
-```
-/quote <ticker>
-```
-
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `ticker` | `string` | **Required**. The symbol to fetch data of. Use ```\tickers``` to validate if ticker exists.|
-
-#### Alerts
-
-```
-/alerts
-```
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `none` | - | - |
-
-#### Tickers
-
-```
-/tickers <ticker>
-```
-
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `query` | `string` | **Required**. The query to search for ticker.|
-
-#### Help
-
-```
-/help
-```
-| Parameter | Type     | Description                |
-| :-------- | :------- | :------------------------- |
-| `none` | - | - |
+**Help**
+`/help`
+- Displays this usage documentation.
 
 ## Support
 
