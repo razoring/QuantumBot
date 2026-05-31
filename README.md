@@ -10,8 +10,8 @@
 ## Architecture
 
 ### Infrastructure
-*   **Deployment**: Docker (via Oracle Cloud)
-*   **Database**: PostgreSQL 18 (hosted on Azure Cloud) | [Database Schema](https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
+*   **Deployment**: Docker
+*   **Database**: PostgreSQL 18 | [Database Schema](https://drawsql.app/teams/razoringg/diagrams/quantum-bot)
 *   **Backend**: Python
 *   **Core Libraries**: Facebook Prophet, SciPy, NumPy, Pandas, Matplotlib, Pillow/PIL
 *   **API Access**: yfinance, psycopg2, discord, FastAPI
