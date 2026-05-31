@@ -335,7 +335,7 @@ class Robot(commands.Cog):
                     inviteUrl = invite.url
                 except discord.errors.Forbidden:
                     view = ProceedView()
-                    warningEmbed = discord.Embed(color=discord.Colour.teal(), title="Missing Permissions", description="The bot is missing the 'Create Invite' permission in this channel.\nWould you like to proceed using a generic fallback image?")
+                    warningEmbed = discord.Embed(color=discord.Colour.teal(), title="403: Permission Forbidden", description="The bot is missing the 'Create Invite' permission in this channel.\nWould you like to proceed using a generic fallback image?")
                     msg = await interaction.followup.send(embed=warningEmbed, view=view, ephemeral=True, wait=True)
                     await view.wait()
                     if not view.proceed:
