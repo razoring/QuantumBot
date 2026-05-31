@@ -3,7 +3,6 @@ IMPORTANT:
 TBD SOON:
 Generate graph variations
 Proper Recession Implementation
-Polymarket data
 Implementation of the AI
 More in-depth telemetry
     Error telemetry
@@ -12,11 +11,12 @@ More in-depth telemetry
 Line chart for chart history
 Points system and leaderboard
 Convert points to credits
-
-FUTURE:
 News sentiment for predictions (LLM)
 Yahoo news command
 Compare command
+
+FUTURE:
+Polymarket data
 Sponsors on the server tab (Monetization)
 Sponsors on intial train (Monetization)
 Disable sponsors (premium subscription)
