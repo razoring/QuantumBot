@@ -38,7 +38,7 @@ class QuantumBot(commands.Bot):
         print(f"Logged in as {self.user} (ID: {self.user.id})")
         if self.intents.members:
             totalUsers = sum(g.member_count for g in self.guilds)
-            print(f"Total Users: {totalUsers}")
+            print(f"Total Users: {totalUsers:,}")
         else:
             print("Total Users: Unknown (Members intent disabled)")
 
@@ -60,7 +60,7 @@ class QuantumBot(commands.Bot):
     async def _updateStatus(self):
         if self.intents.members:
             totalUsers = sum(g.member_count for g in self.guilds)
-            name = f"{totalUsers} traders | /help"
+            name = f"{totalUsers:,} traders | /help"
         else:
             name = "/help"
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
