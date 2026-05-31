@@ -325,7 +325,6 @@ class Robot(commands.Cog):
             info = functions.yFinanceWrapper(ticker=ticker)
             static = getStatic(info)
 
-            update = Update(ticker=ticker)
             embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
             
             if interaction.guild:
@@ -337,6 +336,8 @@ class Robot(commands.Cog):
                 icon = DEFAULT_ICON
                 serverName = "QuantumBot"
                 inviteUrl = BOT_INVITE
+                
+            update = Update(ticker=ticker, duration=duration, interval=interval.value if interval else None, serverName=serverName, inviteUrl=inviteUrl, icon=icon)
 
             loading = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
             loading.description = "Starting..."
@@ -741,17 +742,49 @@ class RegisterPrompt(discord.ui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class Update(discord.ui.View):
-    def __init__(self, ticker):
+    def __init__(self, ticker, duration=None, interval=None, serverName=None, inviteUrl=None, icon=None):
         super().__init__(timeout=300)
         self.ticker = ticker
+        self.duration = duration
+        self.interval = interval
+        self.serverName = serverName
+        self.inviteUrl = inviteUrl
+        self.icon = icon
     
     @discord.ui.button(label="Refresh", style=discord.ButtonStyle.gray, custom_id="Refresh")
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
         functions.recordRequest(interaction.user.id, self.ticker)
-        new_info = functions.yFinanceWrapper(ticker=self.ticker)
-        new_static = getStatic(new_info)
         
-        await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
+        if self.duration:
+            loading = discord.Embed(color=discord.Colour.teal(), title="Generating Chart...")
+            loading.description = "Refreshing chart..."
+            await interaction.response.edit_message(embed=loading, attachments=[], view=self)
+            
+            new_info = functions.yFinanceWrapper(ticker=self.ticker)
+            new_static = getStatic(new_info)
+            charts = functions.Charts()
+            img = await asyncio.to_thread(
+                charts.history, 
+                self.ticker, 
+                self.duration, 
+                self.interval, 
+                self.serverName, 
+                self.inviteUrl, 
+                self.icon, 
+                new_static,
+                interaction.user.id
+            )
+            embed = infoEmbed(info=new_info, ticker=self.ticker, static=new_static)
+            if img:
+                file = discord.File(img, filename="output.png")
+                embed.set_image(url="attachment://output.png")
+                await interaction.edit_original_response(attachments=[file], embed=embed, view=self)
+            else:
+                await interaction.edit_original_response(embed=embed, view=self)
+        else:
+            new_info = functions.yFinanceWrapper(ticker=self.ticker)
+            new_static = getStatic(new_info)
+            await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
 class Feedback(discord.ui.View):
     def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d", currentWeights=None):
