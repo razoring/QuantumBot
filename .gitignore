@@ -20,3 +20,5 @@ __pycache__/
 bot/__pycache__/functions.cpython-39.pyc
 ssh.env
 .deploy.py
+fetch_logs.py
+artifacts/

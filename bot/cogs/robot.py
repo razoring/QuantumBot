@@ -328,10 +328,26 @@ class Robot(commands.Cog):
             embed = infoEmbed(info=info, ticker=ticker, static=static) if sanity else None
             
             if interaction.guild:
-                invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
-                serverName = interaction.guild.name
-                inviteUrl = invite.url
+                try:
+                    invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+                    icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
+                    serverName = interaction.guild.name
+                    inviteUrl = invite.url
+                except discord.errors.Forbidden:
+                    view = ProceedView()
+                    warningEmbed = discord.Embed(color=discord.Colour.teal(), title="Missing Permissions", description="The bot is missing the 'Create Invite' permission in this channel.\nWould you like to proceed using a generic fallback image?")
+                    msg = await interaction.followup.send(embed=warningEmbed, view=view, ephemeral=True, wait=True)
+                    await view.wait()
+                    if not view.proceed:
+                        await interaction.followup.send("Command cancelled.", ephemeral=True)
+                        return
+                    icon = "bot/assets/icons/discord.jpg"
+                    serverName = "Quantum Bot"
+                    inviteUrl = BOT_INVITE
+                except Exception:
+                    icon = "bot/assets/icons/discord.jpg"
+                    serverName = "Quantum Bot"
+                    inviteUrl = BOT_INVITE
             else:
                 icon = DEFAULT_ICON
                 serverName = "QuantumBot"
@@ -447,10 +463,26 @@ class Robot(commands.Cog):
             warning = False
 
             if interaction.guild:
-                invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
-                icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
-                serverName = interaction.guild.name
-                inviteUrl = invite.url
+                try:
+                    invite = await interaction.channel.create_invite(max_age=0, max_uses=0, unique=False, reason="For the advertising graphic (Quantum Bot)")
+                    icon = interaction.guild.icon.url if interaction.guild.icon else DEFAULT_ICON
+                    serverName = interaction.guild.name
+                    inviteUrl = invite.url
+                except discord.errors.Forbidden:
+                    view = ProceedView()
+                    warningEmbed = discord.Embed(color=discord.Colour.teal(), title="Missing Permissions", description="The bot is missing the 'Create Invite' permission in this channel.\nWould you like to proceed using a generic fallback image?")
+                    msg = await interaction.followup.send(embed=warningEmbed, view=view, ephemeral=True, wait=True)
+                    await view.wait()
+                    if not view.proceed:
+                        await interaction.followup.send("Command cancelled.", ephemeral=True)
+                        return
+                    icon = "bot/assets/icons/discord.jpg"
+                    serverName = "Quantum Bot"
+                    inviteUrl = BOT_INVITE
+                except Exception:
+                    icon = "bot/assets/icons/discord.jpg"
+                    serverName = "Quantum Bot"
+                    inviteUrl = BOT_INVITE
             else:
                 icon = DEFAULT_ICON
                 serverName = "QuantumBot"
@@ -740,6 +772,23 @@ class RegisterPrompt(discord.ui.View):
             embed = discord.Embed(color=discord.Colour.teal(), title="500: Internal Server Error")
             embed.description = "Critical Error: Registration failed. Please contact support."
             await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class ProceedView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=60)
+        self.proceed = False
+
+    @discord.ui.button(label="Proceed with Fallback", style=discord.ButtonStyle.green)
+    async def proceed_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.proceed = True
+        await interaction.response.defer()
+        self.stop()
+        
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.red)
+    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.proceed = False
+        await interaction.response.defer()
+        self.stop()
 
 class Update(discord.ui.View):
     def __init__(self, ticker, duration=None, interval=None, serverName=None, inviteUrl=None, icon=None):
