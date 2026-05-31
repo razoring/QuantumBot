@@ -10,8 +10,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy only the bot directory
+# Copy the bot directory and README
 COPY bot/ /app/bot/
+COPY README.md /app/README.md
 
 # Set Python path so imports work correctly
 ENV PYTHONPATH="/app"
