@@ -1095,6 +1095,7 @@ class Charts:
                     "label": f"Short Sentiment of {shortFloat*100:.1f}%"
                 })
 
+            prophetTrend += (curPrice - prophetTrend[0])
             prophetSigma = tickerSigma
 
         points = []
