@@ -25,12 +25,56 @@ except Exception as e:
 class QuantumBot(commands.Bot):
     def __init__(self, intents):
         super().__init__(command_prefix="!", intents=intents)
+        self.active_users = set()
+
+    async def global_interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.command is None: return True
+        if interaction.user.id in self.active_users:
+            embed = discord.Embed(color=discord.Colour.teal(), title="429: Too Many Requests")
+            embed.description = "You already have a command processing. Please wait for it to finish."
+            try:
+                if not interaction.response.is_done(): await interaction.response.send_message(embed=embed, ephemeral=True)
+                else: await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception: pass
+            return False
+        self.active_users.add(interaction.user.id)
+        return True
+
+    async def global_prefix_check(self, ctx):
+        if ctx.author.id in self.active_users:
+            embed = discord.Embed(color=discord.Colour.teal(), title="429: Too Many Requests")
+            embed.description = "You already have a command processing. Please wait for it to finish."
+            await ctx.send(embed=embed)
+            return False
+        self.active_users.add(ctx.author.id)
+        return True
+
+    async def on_app_command_completion(self, interaction: discord.Interaction, command):
+        self.active_users.discard(interaction.user.id)
+
+    async def on_command_completion(self, ctx):
+        self.active_users.discard(ctx.author.id)
+
+    async def on_command_error(self, ctx, error):
+        self.active_users.discard(ctx.author.id)
+        if hasattr(commands.Bot, "on_command_error"):
+            await super().on_command_error(ctx, error)
 
     async def setup_hook(self):
         # Inject persistent DB objects into modules before loading extensions
         import functions
         functions.DB_CONNECTION = DB_CONNECTION
         functions.DB_LOCK = DB_LOCK
+
+        self.tree.interaction_check = self.global_interaction_check
+        self.add_check(self.global_prefix_check)
+
+        original_on_error = self.tree.on_error
+        async def on_tree_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+            self.active_users.discard(interaction.user.id)
+            if original_on_error: await original_on_error(interaction, error)
+        self.tree.on_error = on_tree_error
+
         await self.load_extension("cogs.robot")
         print("Extension 'cogs.robot' loaded.")
             

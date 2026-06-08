@@ -1227,7 +1227,7 @@ class Charts:
                     days_out = (exDate - lastNaive).days
                     if days_out < len(median): price = median[days_out]
                     else: price = median[-1]
-                plot_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate
+                plot_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate 
                 ax.scatter(plot_ex, price, color=themes.brand, marker='s', s=100, zorder=25, edgecolors='white', linewidth=1.5)
         except Exception as e: logging.error(f"Event marker error: {e}")
 
