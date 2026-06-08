@@ -730,7 +730,7 @@ class Charts:
         results = self._batchEval(stock, history, weights, [params])
         return results[0]
 
-    def _batchEval(self, stock, history, weights, param_list):
+    def _batchEval(self, stock, history, weights, param_list, userID=None):
         split_idx = len(history) - 90
         if split_idx < 20: return [(1.0, 0.0)] * len(param_list)
         
@@ -746,7 +746,8 @@ class Charts:
         # We call _forecast for each param set, but _forecast itself is parallel.
         # To truly batch, we'd need to flatten the tasks, but since _forecast handles 5 tasks,
         # calling it in a loop with parallel=True is efficient as the Global Executor is shared.
-        for params in param_list:
+        for i, params in enumerate(param_list):
+            if userID: STATUS_REGISTRY[userID] = f"Dynamic Deep-Scanning ({i+1}/{len(param_list)} Hypotheses)..."
             prophetParams = {'flexibility': params[0], 'seasonality': params[1], 'inflections': 22, 'range': 0.9}
             histories = {90:[weights[0],"D"], 180:[weights[1],"D"], 365:[weights[2],"D"], 730:[weights[3],"D"], 1825:[weights[4],"D"]}
             
@@ -835,15 +836,13 @@ class Charts:
             best_params = [0.035, 0.1]
             best_weights = [0.2] * 5
             
-            if userID: STATUS_REGISTRY[userID] = f"Dynamic Deep-Scanning ({num_candidates} Hypotheses)..."
-
             # Generate all candidates for batch processing
             param_candidates = []
             for i in range(num_candidates):
                 param_candidates.append([float(flex_range[i]), float(season_range[i])])
 
             # Parallel Batch Sweep
-            sweep_results = self._batchEval(stock, history, [0.2]*5, param_candidates)
+            sweep_results = self._batchEval(stock, history, [0.2]*5, param_candidates, userID=userID)
             
             for i, (smape, shape) in enumerate(sweep_results):
                 params = param_candidates[i]
