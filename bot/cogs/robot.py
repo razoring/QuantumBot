@@ -49,8 +49,11 @@ def getVersion():
 
 def getStatic(info):
     return {
+        "getQuoteType": info.getQuoteType(),
         "getDayOpen": info.getDayOpen(),
         "getDayClose": info.getDayClose(),
+        "getDayHigh": info.getDayHigh(),
+        "getDayLow": info.getDayLow(),
         "get52wkHigh": info.get52wkHigh(),
         "get52wkLow": info.get52wkLow(),
         "getVolume": info.getVolume(),
@@ -74,16 +77,22 @@ def infoEmbed(info: any, ticker: str, static: dict):
     )
     embed.set_author(name=f"{str.upper(ticker)}")
     embed.add_field(name=f"Open: {static.get('getDayOpen'):.2f}", value=f"Close*: {static.get('getDayClose'):.2f}", inline=True)
-    embed.add_field(name=f"High: {info.getDayHigh():.2f}", value=f"Low: {info.getDayLow():.2f}", inline=True)
-    embed.add_field(name=f"52W H: {static.get('get52wkHigh'):.2f}", value=f"52W L: {static.get('get52wkLow'):.2f}", inline=True)
+    embed.add_field(name=f"High: {static.get('getDayHigh'):.2f}", value=f"Low: {static.get('getDayLow'):.2f}", inline=True)
+    
+    quoteType = static.get("getQuoteType", "EQUITY")
+    if quoteType in ["CRYPTOCURRENCY", "CURRENCY"]:
+        embed.add_field(name=f"Volume: {HUMANIZER.suffix(static.get('getVolume'))}", value=f"Avg Volume: {HUMANIZER.suffix(static.get('getAvgVolume'))}", inline=True)
+        embed.add_field(name=f"Market Cap: {HUMANIZER.suffix(static.get('getMktCap'))}", value="\u200b", inline=True)
+    else:
+        embed.add_field(name=f"52W H: {static.get('get52wkHigh'):.2f}", value=f"52W L: {static.get('get52wkLow'):.2f}", inline=True)
+        embed.add_field(name=f"Volume: {HUMANIZER.suffix(static.get('getVolume'))}", value=f"Avg Volume: {HUMANIZER.suffix(static.get('getAvgVolume'))}", inline=True)
+        embed.add_field(name=f"P/E: {static.get('getPERatio'):.2f}", value=f"EPS: {static.get('getEPSRatio'):.2f}", inline=True)
+        embed.add_field(name=f"Beta: {static.get('getBeta'):.2f}", value=f"Mkt Cap: {HUMANIZER.suffix(static.get('getMktCap'))}", inline=True)
 
-    embed.add_field(name=f"Volume: {HUMANIZER.suffix(static.get('getVolume'))}", value=f"Avg Volume: {HUMANIZER.suffix(static.get('getAvgVolume'))}", inline=True)
-    embed.add_field(name=f"P/E: {static.get('getPERatio'):.2f}", value=f"EPS: {static.get('getEPSRatio'):.2f}", inline=True)
-    embed.add_field(name=f"Beta: {static.get('getBeta'):.2f}", value=f"Mkt Cap: {HUMANIZER.suffix(static.get('getMktCap'))}", inline=True)
-
-    embed.add_field(name=f"Annual Yield: {static.get('getAnnualYield')}%", value=f"Monthly Yield: {static.get('getMonthlyYield')}%", inline=True)
-    embed.add_field(name=f"Ex. Div.: {static.get('getExDividendDate')}", value=f"Div. Payout: {static.get('getPayDate')}")
-    embed.add_field(name=f"Expected Amount: {static.get('getDividendAmount')}", value=f"Expected Change: {static.get('getDividendChange')}")
+        embed.add_field(name=f"Annual Yield: {static.get('getAnnualYield')}%", value=f"Monthly Yield: {static.get('getMonthlyYield')}%", inline=True)
+        embed.add_field(name=f"Ex. Div.: {static.get('getExDividendDate')}", value=f"Div. Payout: {static.get('getPayDate')}")
+        embed.add_field(name=f"Expected Amount: {static.get('getDividendAmount')}", value=f"Expected Change: {static.get('getDividendChange')}")
+    
     embed.set_footer(text="* is previous day's close, with the exception of aftermarket, whereby 'Close' is the day's close")
     return embed
 

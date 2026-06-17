@@ -220,28 +220,40 @@ class Stamp:
         else:
             draw.text(xy=(2007, 58), text=f"{ticker} Fundamentals:", font=self._font(16), fill=(112, 128, 144))
             if self._factors:
-                groups = [
-                    [
-                        ("52 Week High", f'${round(self._factors["get52wkHigh"],2)}'),
-                        ("52 Week Low", f'${round(self._factors["get52wkLow"],2)}'),
-                        ("Volume", Humanizer.suffix(self._factors["getVolume"])),
-                        ("Avg Volume", Humanizer.suffix(self._factors["getAvgVolume"])),
-                        ("Market Cap", Humanizer.suffix(self._factors["getMktCap"]))
-                    ],
-                    [
-                        ("P/E Ratio", round(self._factors["getPERatio"], 2)),
-                        ("EPS Ratio", round(self._factors["getEPSRatio"], 2)),
-                        ("Beta", round(self._factors["getBeta"], 2)),
-                        ("Annual Yield", f'{round(self._factors["getAnnualYield"], 2)}%'),
-                        ("Monthly Yield", f'{round(self._factors["getMonthlyYield"], 2)}%')
-                    ],
-                    [
-                        ("Div. Amount", self._factors['getDividendAmount']),
-                        ("Div. Change", self._factors['getDividendChange']),
-                        ("Ex Div. Date", self._factors['getExDividendDate']),
-                        ("Pay Date", self._factors['getPayDate'])
+                quoteType = self._factors.get("getQuoteType", "EQUITY")
+                if quoteType in ["CRYPTOCURRENCY", "CURRENCY"]:
+                    groups = [
+                        [
+                            ("24h High", f'${round(self._factors.get("getDayHigh", self._factors.get("get52wkHigh", 0)),2)}'),
+                            ("24h Low", f'${round(self._factors.get("getDayLow", self._factors.get("get52wkLow", 0)),2)}'),
+                            ("Volume", Humanizer.suffix(self._factors.get("getVolume", 0))),
+                            ("Avg Volume", Humanizer.suffix(self._factors.get("getAvgVolume", 0))),
+                            ("Market Cap", Humanizer.suffix(self._factors.get("getMktCap", 0)))
+                        ]
                     ]
-                ]
+                else:
+                    groups = [
+                        [
+                            ("52 Week High", f'${round(self._factors["get52wkHigh"],2)}'),
+                            ("52 Week Low", f'${round(self._factors["get52wkLow"],2)}'),
+                            ("Volume", Humanizer.suffix(self._factors["getVolume"])),
+                            ("Avg Volume", Humanizer.suffix(self._factors["getAvgVolume"])),
+                            ("Market Cap", Humanizer.suffix(self._factors["getMktCap"]))
+                        ],
+                        [
+                            ("P/E Ratio", round(self._factors["getPERatio"], 2)),
+                            ("EPS Ratio", round(self._factors["getEPSRatio"], 2)),
+                            ("Beta", round(self._factors["getBeta"], 2)),
+                            ("Annual Yield", f'{round(self._factors["getAnnualYield"], 2)}%'),
+                            ("Monthly Yield", f'{round(self._factors["getMonthlyYield"], 2)}%')
+                        ],
+                        [
+                            ("Div. Amount", self._factors['getDividendAmount']),
+                            ("Div. Change", self._factors['getDividendChange']),
+                            ("Ex Div. Date", self._factors['getExDividendDate']),
+                            ("Pay Date", self._factors['getPayDate'])
+                        ]
+                    ]
 
                 startX = 1750
                 columnWidths = []
@@ -309,6 +321,7 @@ class yFinanceWrapper:
     def getStockInfo(self): return self._info
     def getFastInfo(self): return self._fastInfo
     def getCalendar(self): return self._calendar
+    def getQuoteType(self): return self._info.get("quoteType", "EQUITY")
     def getCurrentPrice(self): return self._fastInfo.get("lastPrice", 0)
     def getDayOpen(self): return self._fastInfo.get("open", 0)
     def getDayClose(self): return self._fastInfo.get("previousClose", 0)
@@ -1006,26 +1019,35 @@ class Charts:
             
             # Sector Reference
             etfStock = None
+            quoteType = stock.info.get("quoteType", "EQUITY")
+            isCurrency = quoteType in ["CRYPTOCURRENCY", "CURRENCY"]
+
             try:
-                sectorInfo = stock.info.get("sector")
-                if sectorInfo:
-                    mappedSector = sectorInfo.lower().replace(" ", "-")
-                    etfTicker = self._SECTOR_MAP.get(mappedSector)
-                    if etfTicker:
-                         etfStock = yf.Ticker(etfTicker)
-                         etfHistory = etfStock.history(period="5y")
-                         etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
-                         sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
+                if not isCurrency:
+                    sectorInfo = stock.info.get("sector")
+                    if sectorInfo:
+                        mappedSector = sectorInfo.lower().replace(" ", "-")
+                        etfTicker = self._SECTOR_MAP.get(mappedSector)
+                        if etfTicker:
+                             etfStock = yf.Ticker(etfTicker)
+                             etfHistory = etfStock.history(period="5y")
+                             etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
+                             sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
             except Exception: pass
 
             # Macro Reference
-            macroTicker = "^GSPC"
-            try:
-                macroStock = yf.Ticker(macroTicker)
-                macroHistory = macroStock.history(period="5y")
-                macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
-                macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
-            except Exception: macroFullData = (None, None, None)
+            if isCurrency:
+                macroTicker = "BTC-USD" if ticker != "BTC-USD" and quoteType == "CRYPTOCURRENCY" else None
+            else:
+                macroTicker = "^GSPC"
+                
+            if macroTicker:
+                try:
+                    macroStock = yf.Ticker(macroTicker)
+                    macroHistory = macroStock.history(period="5y")
+                    macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
+                    macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
+                except Exception: macroFullData = (None, None, None)
 
             # Earnings Analysis
             weightedSurprise, upcomingDate = self._analyzeEarnings(ticker, stock)
@@ -1039,16 +1061,16 @@ class Charts:
                 else: upcomingDate = None
 
             if sectorTrend is None:
-                blendWeights['ticker'] += 0.05
+                blendWeights['ticker'] += blendWeights['sector']
                 blendWeights['sector'] = 0
             if macroTrend is None:
-                blendWeights['ticker'] += 0.05
+                blendWeights['ticker'] += blendWeights['macro']
                 blendWeights['macro'] = 0
             if upcomingDate is None:
-                blendWeights['ticker'] += 0.05
+                blendWeights['ticker'] += blendWeights['earnings']
                 blendWeights['earnings'] = 0
             if shortFloat == 0:
-                blendWeights['ticker'] += 0.05
+                blendWeights['ticker'] += blendWeights['short']
                 blendWeights['short'] = 0
 
             # Combine Trends
