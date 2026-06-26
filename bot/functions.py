@@ -663,7 +663,7 @@ class Charts:
         allHolidays = pd.concat(holidays) if holidays else None
         curPrice = history.loc[lastDate]["Close"]
         
-        samples = uncertaintySamples if uncertaintySamples is not None else (min(self._SAMPLES, 500) if parallel else 0)
+        samples = uncertaintySamples if uncertaintySamples is not None else (self._SAMPLES if parallel else 0)
         
         # Merge passed params with defaults
         baseParams = {
@@ -1211,7 +1211,7 @@ class Charts:
         
         self._drawGradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
-        idxSelected = 8 if model in [1, 2] else 5
+        idxSelected = 5
         median = points[idxSelected]
         
         mid = len(quantiles) // 2
