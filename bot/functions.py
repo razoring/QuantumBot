@@ -1130,6 +1130,10 @@ class Charts:
             ivPoints = self._impliedVolatility(stock, lastDate, forward, curPrice, quantiles, futureDays)
             points = ivPoints if ivPoints is not None else []
             
+            # Fallback to extrapolation if options data is missing or collapsed into a straight line
+            if len(points) == 0 or (points[-1, -1] - points[0, -1]) < (curPrice * 0.005):
+                model = 1
+            
         if model == 1:
             if prophetTrend is None: raise ValueError("Prophet generation failed")
             
