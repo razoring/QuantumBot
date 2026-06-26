@@ -1357,6 +1357,11 @@ class Charts:
             anchorsX.append(forward)
             anchorsY.append([curPrice] * len(quantiles))
 
+        # Ensure strictly increasing for CubicSpline
+        unique_x, indices = np.unique(anchorsX, return_index=True)
+        anchorsX = unique_x.tolist()
+        anchorsY = [anchorsY[i] for i in indices]
+
         yTransposed = np.array(anchorsY).T 
         points = []
         for series in yTransposed:
