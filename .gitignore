@@ -23,3 +23,4 @@ ssh.env
 fetch_logs.py
 artifacts/
 mockups/
+*.log

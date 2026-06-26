@@ -1,2 +1,0 @@
-AAPL, MSFT, NVDA, AMD, INTC, MU, NVDA, /* Technology: Semiconductors & General Tech */
-CRM, NOW, ADSK, INTU, SNOW, MDB, /* Technology: Software (Enterprise SaaS + Data) */
