@@ -78,15 +78,8 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
         rawTrend = fcst.tail(forward)["yhat"].values
         rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
         
-        if config.uncertainty_samples > 0:
-            try:
-                samples = config.predictive_samples(future)
-                rawSigma = samples['yhat'][-forward:]
-            except Exception:
-                stdev = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 2.56
-                rawSigma = np.tile(stdev[:, None], (1, config.uncertainty_samples))
-        else:
-            rawSigma = np.full(forward, curPrice * 0.02)
+        stdev = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 3.29
+        rawSigma = stdev
 
         rawSigma = np.nan_to_num(rawSigma, nan=curPrice*0.02, posinf=curPrice*0.02, neginf=curPrice*0.02)
 

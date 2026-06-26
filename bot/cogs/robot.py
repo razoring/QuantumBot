@@ -522,6 +522,8 @@ class Robot(commands.Cog):
 
             task = asyncio.create_task(asyncio.to_thread(charts.project, ticker, selectedModel, serverName, inviteUrl, icon, interaction.user.id, selectedLookback))
             loopTask = asyncio.create_task(loadingLoop())
+            cancelView = CancelView(task, loopTask)
+            await status.edit(view=cancelView)
             img, (predictedPrice, weights) = await task
             
             if img is None:
@@ -543,7 +545,7 @@ class Robot(commands.Cog):
                 file = discord.File(imgCopy, filename="output.png")
                 embed.set_image(url="attachment://output.png")
 
-                feedbackView = Feedback(predictedPrice, ticker, selectedModel, imgCopy, serverName, inviteUrl, icon, selectedLookback, currentWeights=weights)
+                feedbackView = Feedback(predictedPrice, ticker, selectedModel, imgCopy, serverName, inviteUrl, icon, selectedLookback, currentWeights=weights, cog=self)
                 if warning: embed.description = "WARNING: Model has been changed because there were not enough datapoints to draw an accurate conclusion."
 
                 await interaction.followup.send(file=file, embed=embed, view=feedbackView)
@@ -844,8 +846,40 @@ class Update(discord.ui.View):
             new_static = getStatic(new_info)
             await interaction.response.edit_message(embed=infoEmbed(info=new_info, ticker=self.ticker, static=new_static), view=self)
 
+class CancelView(discord.ui.View):
+    def __init__(self, task, loopTask):
+        super().__init__(timeout=None)
+        self.task = task
+        self.loopTask = loopTask
+
+    @discord.ui.button(label="Cancel Generation", style=discord.ButtonStyle.red)
+    async def cancel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.task.cancel()
+        self.loopTask.cancel()
+        await interaction.response.edit_message(content="Generation cancelled.", embed=None, view=None, attachments=[])
+
+class ChangeModelView(discord.ui.View):
+    def __init__(self, cog, ticker, lookback):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.ticker = ticker
+        self.lookback = lookback
+
+    @discord.ui.select(
+        placeholder="Select a new prediction model...",
+        options=[
+            discord.SelectOption(label=MODELS[0], value="0"),
+            discord.SelectOption(label=MODELS[1], value="1"),
+            discord.SelectOption(label=MODELS[2], value="2"),
+        ]
+    )
+    async def select_model(self, interaction: discord.Interaction, select: discord.ui.Select):
+        model_choice = app_commands.Choice(name=next((opt.label for opt in select.options if opt.value == select.values[0]), ""), value=select.values[0])
+        lookback_choice = app_commands.Choice(name=self.lookback, value=self.lookback)
+        await self.cog.predict.callback(self.cog, interaction, self.ticker, model=model_choice, lookback=lookback_choice)
+
 class Feedback(discord.ui.View):
-    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d", currentWeights=None):
+    def __init__(self, alertPrice, alertTicker, model, fileObject, serverName, serverInvite, serverIcon, lookback="90d", currentWeights=None, cog=None):
         super().__init__(timeout=300)
         self.alertPrice = alertPrice
         self.ticker = alertTicker
@@ -856,6 +890,7 @@ class Feedback(discord.ui.View):
         self.serverIcon = serverIcon
         self.lookback = lookback
         self.currentWeights = currentWeights
+        self.cog = cog
         self._processing = False
         self._updateLabels()
 
@@ -973,6 +1008,14 @@ class Feedback(discord.ui.View):
     @discord.ui.button(label="👎", style=discord.ButtonStyle.gray, custom_id="DislikeButton")
     async def dislikeButton(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.feedbackSubmit(interaction, "👎")
+
+    @discord.ui.button(label="Change Model", style=discord.ButtonStyle.blurple, custom_id="ChangeModelButton")
+    async def changeModel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.cog is None:
+            await interaction.response.send_message("Command context lost. Please run /predict again.", ephemeral=True)
+            return
+        view = ChangeModelView(self.cog, self.ticker, self.lookback)
+        await interaction.response.send_message("Select a new model to generate:", view=view, ephemeral=True)
 
     @discord.ui.button(label="Feedback", style=discord.ButtonStyle.gray, custom_id="DetailedFeedbackButton")
     async def detailsButton(self, interaction: discord.Interaction, button: discord.ui.Button):
