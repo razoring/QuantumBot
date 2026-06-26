@@ -81,10 +81,10 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
         if config.uncertainty_samples > 0:
             try:
                 samples = config.predictive_samples(future)
-                rawSigma = np.std(samples['yhat'], axis=1)
-                rawSigma = rawSigma[-forward:]
+                rawSigma = samples['yhat'][-forward:]
             except Exception:
-                rawSigma = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 2.56
+                stdev = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 2.56
+                rawSigma = np.tile(stdev[:, None], (1, config.uncertainty_samples))
         else:
             rawSigma = np.full(forward, curPrice * 0.02)
 
@@ -100,7 +100,9 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
         if not np.all(np.isfinite(curve)): curve = np.full(forward, curPrice)
         return h, (curve, rawSigma, deltas, cp_dates)
     except Exception:
-        return h, (np.full(forward, curPrice), np.full(forward, curPrice * 0.02), np.zeros(params['inflections']), np.array([]))
+        samples_count = params.get('uncertaintySamples', 0)
+        fallback = np.full((forward, samples_count), curPrice * 0.02) if samples_count > 0 else np.full(forward, curPrice * 0.02)
+        return h, (np.full(forward, curPrice), fallback, np.zeros(params['inflections']), np.array([]))
 
 class Stamp:
     def __init__(self, name, url, icon, styles, factors):
@@ -1014,7 +1016,7 @@ class Charts:
             if curves is None: return None, (None, None)
             
             tickerTrend = np.dot(bestWeight, curves)
-            tickerSigma = np.dot(bestWeight, sigmas)
+            tickerSigma = np.average(sigmas, axis=0, weights=bestWeight)
 
             # 70/10/10/5/5 Blended Prediction Logic
             blendWeights = {'ticker': 0.70, 'sector': 0.1, 'macro': 0.1, 'earnings': 0.05, 'short': 0.05}
@@ -1128,7 +1130,15 @@ class Charts:
             
         if model == 1:
             if prophetTrend is None: raise ValueError("Prophet generation failed")
-            points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
+            
+            if prophetSigma.ndim == 2:
+                # Calculate true asymmetric percentiles from raw samples
+                sample_median = np.median(prophetSigma, axis=1)
+                centered_samples = prophetSigma - sample_median[:, None] + prophetTrend[:, None]
+                points = np.percentile(centered_samples, [q * 100 for q in quantiles], axis=1)
+            else:
+                # Fallback to symmetric normal distribution
+                points = np.array([prophetTrend + (norm.ppf(q) * prophetSigma) for q in quantiles])
         elif model == 2 and len(points) > 0 and prophetTrend is not None:
             spread = points - curPrice
             points = np.array([prophetTrend + spread[i] for i in range(len(quantiles))])
