@@ -52,6 +52,8 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
     """Top-level function for parallel Prophet fitting (Pickleable)"""
     try:
         uncertaintySamples = params.get('uncertaintySamples', 0)
+        actual_inflections = max(params['inflections'], min(len(data) // 6, 180))
+
         config = Prophet(
             growth='logistic',
             holidays=allHolidays,
@@ -59,7 +61,7 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
             yearly_seasonality=True, 
             weekly_seasonality=True, 
             seasonality_prior_scale=params['seasonality'],
-            n_changepoints=params['inflections'],
+            n_changepoints=actual_inflections,
             changepoint_prior_scale=params['flexibility'],
             changepoint_range=params['range'],
             uncertainty_samples=uncertaintySamples
@@ -841,7 +843,7 @@ class Charts:
             
             # Anchor Points for interpolation
             # Low Flex -> High Flex, High Seasonality -> Low Seasonality
-            flex_range = np.linspace(0.015, 0.25, num_candidates)
+            flex_range = np.linspace(0.015, 0.45, num_candidates)
             season_range = np.linspace(0.3, 0.01, num_candidates)
             
             best_smape = 1.0
@@ -1197,8 +1199,8 @@ class Charts:
         
         self._drawGradient(ax, mdates.date2num(plotHistory.index), plotHistory["Close"].values, minY, themes.brand)
         
-        idx50 = 5
-        median = points[idx50]
+        idxSelected = 8 if model in [1, 2] else 5
+        median = points[idxSelected]
         
         mid = len(quantiles) // 2
         for i in range(mid): ax.fill_between(futureDates, points[i], points[-(i+1)], color=themes.brand, alpha=0.15, lw=0)
