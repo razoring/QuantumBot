@@ -22,3 +22,4 @@ ssh.env
 .deploy.py
 fetch_logs.py
 artifacts/
+mockups/

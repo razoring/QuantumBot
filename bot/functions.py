@@ -941,7 +941,7 @@ class Charts:
         stock = yf.Ticker(ticker)
         history = stock.history(period="5y", interval="1d", actions=True) if model != 0 else stock.history(period="1wk", actions=True)
         history = history.resample("D").interpolate(method="linear").ffill().bfill()
-        if history.empty: return None
+        if history.empty: return None, (None, None)
         
         curPrice = history["Close"].iloc[-1]
         lastDate = history.index[-1]
@@ -1009,7 +1009,7 @@ class Charts:
             histories = {90:[bestWeight[0],"D"], 180:[bestWeight[1],"D"], 365:[bestWeight[2],"D"], 730:[bestWeight[3],"D"], 1825:[bestWeight[4],"D"]}
             
             curves, sigmas, insights = self._forecast(stock, history, histories, lastDate, forward=forward+1, parallel=True, prophetParams=prophetParams)
-            if curves is None: return None
+            if curves is None: return None, (None, None)
             
             tickerTrend = np.dot(bestWeight, curves)
             tickerSigma = np.dot(bestWeight, sigmas)
@@ -1140,7 +1140,7 @@ class Charts:
                 globalImpacts[d_str] = globalImpacts.get(d_str, 0) + (val * weight)
 
 
-        if len(points) == 0: return None
+        if len(points) == 0: return None, (None, None)
         points = np.maximum(points, 0.01)
         futureDates = [lastDate + timedelta(days=int(d)) for d in futureDays]
         
@@ -1208,49 +1208,57 @@ class Charts:
             visibleStart = plotHistory.index[0].tz_localize(None) if plotHistory.index[0].tzinfo else plotHistory.index[0]
             visibleEnd = futureDates[-1].tz_localize(None) if futureDates[-1].tzinfo else futureDates[-1]
             lastNaive = lastDate.tz_localize(None) if lastDate.tzinfo else lastDate
+            hist_tz = getattr(history.index, 'tz', None) or getattr(history.index, 'tzinfo', None)
 
-            earningsData = stock.get_earnings_dates()
-            if earningsData is not None and not earningsData.empty:
-                eDates = earningsData.index.tz_localize(None)
-                for ed in eDates:
-                    if visibleStart <= ed <= visibleEnd:
-                        if ed <= lastNaive:
-                            query_ed = ed.tz_localize(history.index.tzinfo) if history.index.tzinfo else ed
-                            price = history.asof(query_ed)["Close"]
-                        else:
-                            days_out = (ed - lastNaive).days
-                            if days_out < len(median): price = median[days_out]
-                            else: continue
-                        plot_ed = ed.tz_localize(history.index.tzinfo) if history.index.tzinfo else ed
-                        ax.scatter(plot_ed, price, color=themes.brand, marker='o', s=100, zorder=25, edgecolors='white', linewidth=1.5)
+            try:
+                earningsData = stock.get_earnings_dates()
+                if earningsData is not None and not earningsData.empty:
+                    eDates = earningsData.index.tz_localize(None) if getattr(earningsData.index, 'tz', None) is not None else earningsData.index
+                    for ed in eDates:
+                        if visibleStart <= ed <= visibleEnd:
+                            if ed <= lastNaive:
+                                query_ed = ed.tz_localize(hist_tz) if hist_tz else ed
+                                price = history.asof(query_ed)["Close"]
+                            else:
+                                days_out = (ed - lastNaive).days
+                                if days_out < len(median): price = median[days_out]
+                                else: continue
+                            plot_ed = ed.tz_localize(hist_tz) if hist_tz else ed
+                            ax.scatter(plot_ed, price, color=themes.brand, marker='o', s=100, zorder=25, edgecolors='white', linewidth=1.5)
+            except Exception as e: logging.error(f"Earnings marker error: {e}")
 
-            validExDates = []
-            divs = stock.dividends
-            if not divs.empty:
-                dDates = divs.index.tz_localize(None)
-                for dd in dDates:
-                    if visibleStart <= dd <= visibleEnd:
-                        validExDates.append(dd)
-                        
-            calEx = stock.calendar.get("Ex-Dividend Date")
-            if calEx:
-                if isinstance(calEx, (datetime, date)): 
-                    calExTs = pd.Timestamp(calEx)
-                    if visibleStart <= calExTs <= visibleEnd:
-                        if not any((abs((calExTs - d).days) <= 1) for d in validExDates):
-                            validExDates.append(calExTs)
+            try:
+                validExDates = []
+                divs = stock.dividends
+                if divs is not None and not divs.empty:
+                    dDates = divs.index.tz_localize(None) if getattr(divs.index, 'tz', None) is not None else divs.index
+                    for dd in dDates:
+                        if visibleStart <= dd <= visibleEnd:
+                            validExDates.append(dd)
+                            
+                calEx = None
+                try: calEx = stock.calendar.get("Ex-Dividend Date")
+                except: pass
+                
+                if calEx is not None:
+                    if isinstance(calEx, (datetime, date)): 
+                        calExTs = pd.Timestamp(calEx)
+                        if visibleStart <= calExTs <= visibleEnd:
+                            if not any((abs((calExTs - d).days) <= 1) for d in validExDates):
+                                validExDates.append(calExTs)
 
-            for exDate in validExDates:
-                if exDate <= lastNaive:
-                    query_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate
-                    price = history.asof(query_ex)["Close"]
-                else:
-                    days_out = (exDate - lastNaive).days
-                    if days_out < len(median): price = median[days_out]
-                    else: price = median[-1]
-                plot_ex = exDate.tz_localize(history.index.tzinfo) if history.index.tzinfo else exDate 
-                ax.scatter(plot_ex, price, color=themes.brand, marker='s', s=100, zorder=25, edgecolors='white', linewidth=1.5)
-        except Exception as e: logging.error(f"Event marker error: {e}")
+                for exDate in validExDates:
+                    if exDate <= lastNaive:
+                        query_ex = exDate.tz_localize(hist_tz) if hist_tz else exDate
+                        price = history.asof(query_ex)["Close"]
+                    else:
+                        days_out = (exDate - lastNaive).days
+                        if days_out < len(median): price = median[days_out]
+                        else: price = median[-1]
+                    plot_ex = exDate.tz_localize(hist_tz) if hist_tz else exDate 
+                    ax.scatter(plot_ex, price, color=themes.brand, marker='s', s=100, zorder=25, edgecolors='white', linewidth=1.5)
+            except Exception as e: logging.error(f"Dividend marker error: {e}")
+        except Exception as e: logging.error(f"Event marker boundary error: {e}")
 
         allDates = list(plotHistory.index) + futureDates
         self._formatAxes(ax, allDates, minY, maxY, median[-1], formatX=True)

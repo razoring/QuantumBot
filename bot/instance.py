@@ -105,6 +105,8 @@ class QuantumBot(commands.Bot):
         if self.intents.members:
             totalUsers = sum(g.member_count for g in self.guilds)
             name = f"{totalUsers:,} traders | /help"
+        elif self.guilds:
+            name = f"{len(self.guilds):,} servers | /help"
         else:
             name = "/help"
         await self.change_presence(activity=discord.Activity(type=discord.ActivityType.listening, name=name))
