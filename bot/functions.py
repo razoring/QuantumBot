@@ -685,12 +685,14 @@ class Charts:
             window = window.resample("D").interpolate(method="linear").ffill().bfill()
             
             if len(window) < 50:
-                resultsMap[h] = (np.full(forward, curPrice), np.full(forward, curPrice * 0.02), (np.zeros(prophetParams['inflections']), np.array([])))
+                samples_count = prophetParams.get('uncertaintySamples', 0)
+                fallback = np.full((forward, samples_count), curPrice * 0.02) if samples_count > 0 else np.full(forward, curPrice * 0.02)
+                resultsMap[h] = (np.full(forward, curPrice), fallback, (np.zeros(prophetParams['inflections']), np.array([])))
                 continue
             
             # Include weight values in cache key to ensure mutation changes the chart
             weightValues = tuple([settings[0] for settings in configs.values()])
-            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), weightValues, "LOGISTIC_V6")
+            key = (lastDate.isoformat(), h, tuple(window["Close"].values[-5:]), weightValues, "LOGISTIC_V7")
             with self._CACHE_LOCK:
                 cached = self._CACHE.get(key)
                 if cached is not None:
@@ -738,8 +740,8 @@ class Charts:
                         self._CACHE[t[8]] = (time.time(), (curve, sigma, (deltas, cp_dates)))
 
         finalResults = [resultsMap[h] for h in configs.keys()]
-        curves = np.vstack([r[0] for r in finalResults])
-        sigmas = np.vstack([r[1] for r in finalResults])
+        curves = np.array([r[0] for r in finalResults])
+        sigmas = np.array([r[1] for r in finalResults])
         insights = [r[2] for r in finalResults]
         return (curves, sigmas, insights)
 
