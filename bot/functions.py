@@ -1334,8 +1334,14 @@ class Charts:
                 validIvs = pd.concat([calls["impliedVolatility"], puts["impliedVolatility"]])
                 validIvs = validIvs[validIvs > 0.001]
                 
-                if validIvs.empty: continue
-                meanIv = validIvs.mean()
+                if validIvs.empty:
+                    # Fallback to the median of all valid IVs across the entire chain
+                    allIvs = pd.concat([opt.calls["impliedVolatility"], opt.puts["impliedVolatility"]])
+                    allIvs = allIvs[allIvs > 0.001]
+                    if allIvs.empty: continue
+                    meanIv = allIvs.median()
+                else:
+                    meanIv = validIvs.mean()
 
                 # even if daysDiff is 0 or 1, we force tYears to be at least 1/365; this prevents the square root of time from becoming 0 and collapsing the graph
                 effectiveDays = max(daysDiff, 1.0)
@@ -1350,7 +1356,9 @@ class Charts:
                 
                 anchorsX.append(max(daysDiff, 1))
                 anchorsY.append(expPrices)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.error(f"Option parsing error for {exp}: {e}")
                 continue
 
         if len(anchorsX) < 2:
