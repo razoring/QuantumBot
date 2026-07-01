@@ -312,7 +312,7 @@ class yFinanceWrapper:
 
     def _getHistory(self, period="1y"):
         if self._cachedHistory is None:
-            self._cachedHistory = self._symbol.history(period=period, repair=True)
+            self._cachedHistory = self._symbol.history(period=period, repair=True).drop(columns=["Repaired?"], errors="ignore")
         return self._cachedHistory
 
     def getStockInfo(self): return self._info
@@ -339,25 +339,29 @@ class yFinanceWrapper:
     def getBeta(self): return self._info.get("beta", 0)
 
     def getDividendsPayout(self):
-        history = self._getHistory("2y")
-        if history is not None and "Dividends" in history and not history.empty:
-            divs = history["Dividends"][history["Dividends"] > 0]
-            if not divs.empty: return divs
+        try:
+            history = self._getHistory("2y")
+            if history is not None and "Dividends" in history and not history.empty:
+                divs = history["Dividends"][history["Dividends"] > 0]
+                if not divs.empty: return divs
+        except Exception: pass
         return None
 
     def getAnnualYield(self):
-        divs = self.getDividendsPayout()
-        if divs is not None and not divs.empty:
-            cutoff = pd.Timestamp.now(tz=divs.index.tz) - pd.Timedelta(days=365)
-            past_year_divs = divs[divs.index >= cutoff]
-            if not past_year_divs.empty:
-                total_divs = past_year_divs.sum()
-                price = self.getCurrentPrice()
-                if price and price > 0:
-                    return round((total_divs / price) * 100, 2)
+        try:
+            divs = self.getDividendsPayout()
+            if divs is not None and not divs.empty:
+                cutoff = pd.Timestamp.now(tz=getattr(divs.index, 'tz', None)) - pd.Timedelta(days=365)
+                past_year_divs = divs[divs.index >= cutoff]
+                if not past_year_divs.empty:
+                    total_divs = float(past_year_divs.sum())
+                    price = self.getCurrentPrice()
+                    if price and price > 0:
+                        return round((total_divs / price) * 100, 2)
+        except Exception: pass
                     
-        if "dividendYield" in self._info and self._info["dividendYield"] is not None: return round(self._info["dividendYield"] * 100, 2)
-        rate = self._info.get("trailingAnnualDividendRate")
+        if isinstance(self._info, dict) and "dividendYield" in self._info and self._info["dividendYield"] is not None: return round(self._info["dividendYield"] * 100, 2)
+        rate = self._info.get("trailingAnnualDividendRate") if isinstance(self._info, dict) else None
         price = self.getCurrentPrice()
         if rate and price: return round((rate / price) * 100, 2)
         return 0
@@ -519,11 +523,11 @@ class Charts:
         # Get YTD data
         today = datetime.now()
         start_date = f"{today.year}-01-01"
-        history = stock.history(start=start_date, interval="1d", repair=True)
+        history = stock.history(start=start_date, interval="1d", repair=True).drop(columns=["Repaired?"], errors="ignore")
         
         # Ensure we have at least 90 days + some training context
         if len(history) < 120:
-            history = stock.history(period="1y", interval="1d", repair=True)
+            history = stock.history(period="1y", interval="1d", repair=True).drop(columns=["Repaired?"], errors="ignore")
             
         if len(history) < 95:
             return None
@@ -844,8 +848,8 @@ class Charts:
         try:
             ticker = ticker.upper()
             stock = yf.Ticker(ticker)
-            history = stock.history(period="2y", interval="1d", repair=True)
-            if len(history) < 120: history = stock.history(period="10y", interval="1d", repair=True)
+            history = stock.history(period="2y", interval="1d", repair=True).drop(columns=["Repaired?"], errors="ignore")
+            if len(history) < 120: history = stock.history(period="10y", interval="1d", repair=True).drop(columns=["Repaired?"], errors="ignore")
             if len(history) < 95: return [0.2]*5, [0.035, 0.1], 0
             
             # Hardware-Aware Dynamic Search Space (Total-1)
@@ -952,7 +956,7 @@ class Charts:
 
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
-        history = stock.history(period="5y", interval="1d", actions=True, repair=True) if model != 0 else stock.history(period="1wk", actions=True, repair=True)
+        history = stock.history(period="5y", interval="1d", actions=True, repair=True).drop(columns=["Repaired?"], errors="ignore") if model != 0 else stock.history(period="1wk", actions=True, repair=True).drop(columns=["Repaired?"], errors="ignore")
         history = history.resample("D").interpolate(method="linear").ffill().bfill()
         if history.empty: return None, (None, None)
         
@@ -1043,7 +1047,7 @@ class Charts:
                         etfTicker = self._SECTOR_MAP.get(mappedSector)
                         if etfTicker:
                              etfStock = yf.Ticker(etfTicker)
-                             etfHistory = etfStock.history(period="5y", repair=True)
+                             etfHistory = etfStock.history(period="5y", repair=True).drop(columns=["Repaired?"], errors="ignore")
                              etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
                              sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
             except Exception: pass
@@ -1057,7 +1061,7 @@ class Charts:
             if macroTicker:
                 try:
                     macroStock = yf.Ticker(macroTicker)
-                    macroHistory = macroStock.history(period="5y", repair=True)
+                    macroHistory = macroStock.history(period="5y", repair=True).drop(columns=["Repaired?"], errors="ignore")
                     macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
                     macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
                 except Exception: macroFullData = (None, None, None)
@@ -1496,7 +1500,7 @@ class Charts:
                 return date.strftime(string)
             return ""
 
-        history = stock.history(period=duration, interval=interval, repair=True)
+        history = stock.history(period=duration, interval=interval, repair=True).drop(columns=["Repaired?"], errors="ignore")
         if history.empty: return None
 
         if history.index.tz is None: history.index = history.index.tz_localize("UTC")
