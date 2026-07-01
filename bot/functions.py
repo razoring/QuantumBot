@@ -312,7 +312,7 @@ class yFinanceWrapper:
 
     def _getHistory(self, period="1y"):
         if self._cachedHistory is None:
-            self._cachedHistory = self._symbol.history(period=period)
+            self._cachedHistory = self._symbol.history(period=period, repair=True)
         return self._cachedHistory
 
     def getStockInfo(self): return self._info
@@ -505,11 +505,11 @@ class Charts:
         # Get YTD data
         today = datetime.now()
         start_date = f"{today.year}-01-01"
-        history = stock.history(start=start_date, interval="1d")
+        history = stock.history(start=start_date, interval="1d", repair=True)
         
         # Ensure we have at least 90 days + some training context
         if len(history) < 120:
-            history = stock.history(period="1y", interval="1d")
+            history = stock.history(period="1y", interval="1d", repair=True)
             
         if len(history) < 95:
             return None
@@ -830,8 +830,8 @@ class Charts:
         try:
             ticker = ticker.upper()
             stock = yf.Ticker(ticker)
-            history = stock.history(period="2y", interval="1d")
-            if len(history) < 120: history = stock.history(period="10y", interval="1d")
+            history = stock.history(period="2y", interval="1d", repair=True)
+            if len(history) < 120: history = stock.history(period="10y", interval="1d", repair=True)
             if len(history) < 95: return [0.2]*5, [0.035, 0.1], 0
             
             # Hardware-Aware Dynamic Search Space (Total-1)
@@ -938,7 +938,7 @@ class Charts:
 
         ticker = str(ticker).upper()
         stock = yf.Ticker(ticker)
-        history = stock.history(period="5y", interval="1d", actions=True) if model != 0 else stock.history(period="1wk", actions=True)
+        history = stock.history(period="5y", interval="1d", actions=True, repair=True) if model != 0 else stock.history(period="1wk", actions=True, repair=True)
         history = history.resample("D").interpolate(method="linear").ffill().bfill()
         if history.empty: return None, (None, None)
         
@@ -1029,7 +1029,7 @@ class Charts:
                         etfTicker = self._SECTOR_MAP.get(mappedSector)
                         if etfTicker:
                              etfStock = yf.Ticker(etfTicker)
-                             etfHistory = etfStock.history(period="5y")
+                             etfHistory = etfStock.history(period="5y", repair=True)
                              etfHistory = etfHistory.resample("D").interpolate(method="linear").ffill().bfill()
                              sectorTrend, etfFullData = self._getTunedForecast(etfTicker, etfStock, etfHistory, lastDate, forward+1)
             except Exception: pass
@@ -1043,7 +1043,7 @@ class Charts:
             if macroTicker:
                 try:
                     macroStock = yf.Ticker(macroTicker)
-                    macroHistory = macroStock.history(period="5y")
+                    macroHistory = macroStock.history(period="5y", repair=True)
                     macroHistory = macroHistory.resample("D").interpolate(method="linear").ffill().bfill()
                     macroTrend, macroFullData = self._getTunedForecast(macroTicker, macroStock, macroHistory, lastDate, forward+1)
                 except Exception: macroFullData = (None, None, None)
@@ -1482,7 +1482,7 @@ class Charts:
                 return date.strftime(string)
             return ""
 
-        history = stock.history(period=duration, interval=interval)
+        history = stock.history(period=duration, interval=interval, repair=True)
         if history.empty: return None
 
         if history.index.tz is None: history.index = history.index.tz_localize("UTC")

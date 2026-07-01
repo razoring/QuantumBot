@@ -41,25 +41,3 @@ except Exception as e:
 
 if __name__ == "__main__":
     uvicorn.run("main:app",host="127.0.0.1",port=8000,reload=True)
-
-"""
-insert into ticker(
-	ticker,
-	sector,
-	industry,
-	active,
-	accuracy,
-	weight,
-	datapoints,
-	updated
-) values (
-	'NVDA',
-	'semiconductors',
-	'technology',
-	true,
-	0.87235,
-	'[0.17936215747100248, 0.20798101331510577, 0.45905395176356334, 0.10320645249543611, 0.050396425957627985]',
-	'{"dates": ["01-01-2025","01-02-2025"], "prices": [179.23, 184.55]}',
-	'1769455179'
-)
-"""
