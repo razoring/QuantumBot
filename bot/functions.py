@@ -78,8 +78,11 @@ def _fitProphetModel(h, settings, lastDate, data, allHolidays, forward, curPrice
         rawTrend = fcst.tail(forward)["yhat"].values
         rawTrend = np.nan_to_num(rawTrend, nan=curPrice, posinf=curPrice, neginf=curPrice)
         
-        stdev = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 3.29
-        rawSigma = stdev
+        if "yhat_upper" in fcst.columns and "yhat_lower" in fcst.columns:
+            stdev = (fcst.tail(forward)["yhat_upper"].values - fcst.tail(forward)["yhat_lower"].values) / 3.29
+            rawSigma = stdev
+        else:
+            rawSigma = np.full(forward, curPrice * 0.02)
 
         rawSigma = np.nan_to_num(rawSigma, nan=curPrice*0.02, posinf=curPrice*0.02, neginf=curPrice*0.02)
 
