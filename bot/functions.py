@@ -338,7 +338,24 @@ class yFinanceWrapper:
     def getMktCap(self): return self._info.get("marketCap", 0)
     def getBeta(self): return self._info.get("beta", 0)
 
+    def getDividendsPayout(self):
+        history = self._getHistory("2y")
+        if history is not None and "Dividends" in history and not history.empty:
+            divs = history["Dividends"][history["Dividends"] > 0]
+            if not divs.empty: return divs
+        return None
+
     def getAnnualYield(self):
+        divs = self.getDividendsPayout()
+        if divs is not None and not divs.empty:
+            cutoff = pd.Timestamp.now(tz=divs.index.tz) - pd.Timedelta(days=365)
+            past_year_divs = divs[divs.index >= cutoff]
+            if not past_year_divs.empty:
+                total_divs = past_year_divs.sum()
+                price = self.getCurrentPrice()
+                if price and price > 0:
+                    return round((total_divs / price) * 100, 2)
+                    
         if "dividendYield" in self._info and self._info["dividendYield"] is not None: return round(self._info["dividendYield"] * 100, 2)
         rate = self._info.get("trailingAnnualDividendRate")
         price = self.getCurrentPrice()
@@ -348,9 +365,6 @@ class yFinanceWrapper:
     def getMonthlyYield(self):
         yields = self.getAnnualYield()
         return round(yields / 12.0, 2) if yields != 0 else 0
-    
-    def getDividendsPayout(self):
-        return self._symbol.dividends if self.getAnnualYield() > 0 else None
 
     def getExDividendDate(self):
         ts = self._info.get("exDividendDate")
